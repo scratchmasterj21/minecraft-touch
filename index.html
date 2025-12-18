@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html style="width:100%;height:100%;background-color:black;">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0" />
+		<meta name="description" content="Play minecraft 1.8 in your browser" />
+		<meta name="keywords" content="eaglercraft, eaglercraftx, minecraft, 1.8, 1.8.8" />
+		<title>Minecraft 1.8</title>
+		<meta property="og:locale" content="en-US" />
+		<meta property="og:type" content="website" />
+		<meta property="og:title" content="Minecraft 1.8" />
+		<meta property="og:description" content="Play minecraft 1.8 in your browser" />
+		<meta property="og:image" content="favicon.png" />
+		<link type="image/png" rel="shortcut icon" href="favicon.png" />
+		
+		<!-- Google Identity Services -->
+		<script src="https://accounts.google.com/gsi/client" async defer></script>
+		
+		<!-- Game code -->
+		<script type="text/javascript" src="classes.js"></script>
+
+		<style>
+			/* Login overlay styles */
+			#login-overlay {
+				position: fixed;
+				top: 0;
+				left: 0;
+				width: 100%;
+				height: 100%;
+				background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+				display: flex;
+				flex-direction: column;
+				justify-content: center;
+				align-items: center;
+				z-index: 9999;
+				font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+			}
+			
+			.login-container {
+				background: rgba(255, 255, 255, 0.05);
+				backdrop-filter: blur(10px);
+				border-radius: 20px;
+				padding: 40px 50px;
+				text-align: center;
+				border: 1px solid rgba(255, 255, 255, 0.1);
+				box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+			}
+			
+			.login-title {
+				color: #4ade80;
+				font-size: 2.5rem;
+				margin-bottom: 10px;
+				text-shadow: 0 0 20px rgba(74, 222, 128, 0.3);
+			}
+			
+			.login-subtitle {
+				color: #94a3b8;
+				font-size: 1rem;
+				margin-bottom: 30px;
+			}
+			
+			.school-badge {
+				background: rgba(74, 222, 128, 0.1);
+				border: 1px solid rgba(74, 222, 128, 0.3);
+				border-radius: 8px;
+				padding: 8px 16px;
+				color: #4ade80;
+				font-size: 0.85rem;
+				margin-bottom: 25px;
+				display: inline-block;
+			}
+			
+			#google-signin-btn {
+				margin: 20px auto;
+			}
+			
+			.login-error {
+				color: #f87171;
+				background: rgba(248, 113, 113, 0.1);
+				border: 1px solid rgba(248, 113, 113, 0.3);
+				border-radius: 8px;
+				padding: 12px 20px;
+				margin-top: 20px;
+				display: none;
+				font-size: 0.9rem;
+			}
+			
+			.login-loading {
+				color: #60a5fa;
+				margin-top: 20px;
+				display: none;
+				font-size: 0.9rem;
+			}
+			
+			.login-loading::after {
+				content: '';
+				animation: dots 1.5s infinite;
+			}
+			
+			@keyframes dots {
+				0%, 20% { content: '.'; }
+				40% { content: '..'; }
+				60%, 100% { content: '...'; }
+			}
+		</style>
+
+		<script>
+			// ============================================
+			// CONFIGURATION - Replace with your values
+			// ============================================
+			const CONFIG = {
+				// TODO: Replace with your Google OAuth Client ID from Google Cloud Console
+				GOOGLE_CLIENT_ID: '313123590702-lb7fjsbbqt83t3ljocvpf5la58uqmir4.apps.googleusercontent.com',
+				
+				// Your Cloudflare Worker endpoint
+				WORKER_URL: 'https://checkaccess.carlo587-jcl.workers.dev',
+				
+				// App ID for access rules
+				APP_ID: 'minecraft',
+				
+				// Allowed email domain
+				ALLOWED_DOMAIN: 'felice.ed.jp'
+			};
+			// ============================================
+
+			let gameInitialized = false;
+			let currentUser = null;
+
+			/**
+			 * Initialize Google Sign-In when the library loads
+			 */
+			function initGoogleSignIn() {
+				if (typeof google === 'undefined') {
+					// Google library not loaded yet, retry
+					setTimeout(initGoogleSignIn, 100);
+					return;
+				}
+
+				google.accounts.id.initialize({
+					client_id: CONFIG.GOOGLE_CLIENT_ID,
+					callback: handleGoogleSignIn,
+					auto_select: true,  // Auto sign-in if user previously signed in
+					cancel_on_tap_outside: false
+				});
+
+				// Render the sign-in button
+				google.accounts.id.renderButton(
+					document.getElementById('google-signin-btn'),
+					{
+						theme: 'filled_blue',
+						size: 'large',
+						text: 'signin_with',
+						shape: 'rectangular',
+						width: 280
+					}
+				);
+
+				// Also show One Tap prompt
+				google.accounts.id.prompt();
+			}
+
+			/**
+			 * Handle Google Sign-In callback
+			 */
+			async function handleGoogleSignIn(response) {
+				showLoading(true);
+				hideError();
+
+				try {
+					// Decode the JWT to get user info (for display only - verification happens server-side)
+					const payload = parseJwt(response.credential);
+					
+					// Quick client-side domain check (server will verify too)
+					if (!payload.email.endsWith('@' + CONFIG.ALLOWED_DOMAIN)) {
+						showError(`Only @${CONFIG.ALLOWED_DOMAIN} accounts are allowed`);
+						showLoading(false);
+						return;
+					}
+
+					currentUser = {
+						email: payload.email,
+						name: payload.name,
+						picture: payload.picture,
+						idToken: response.credential
+					};
+
+					// Check access with the worker
+					await checkAccessWithToken(response.credential);
+
+				} catch (err) {
+					console.error('Sign-in error:', err);
+					showError('Sign-in failed. Please try again.');
+					showLoading(false);
+				}
+			}
+
+			/**
+			 * Check access using Google ID token
+			 */
+			async function checkAccessWithToken(idToken) {
+				try {
+					const response = await fetch(`${CONFIG.WORKER_URL}/check-access`, {
+						method: 'POST',
+						headers: { 'Content-Type': 'application/json' },
+						body: JSON.stringify({
+							idToken: idToken,
+							appId: CONFIG.APP_ID,
+							timezone: Intl.DateTimeFormat().resolvedOptions().timeZone
+						})
+					});
+
+					const result = await response.json();
+
+					if (result.error) {
+						showError(result.message || result.error);
+						showLoading(false);
+						return;
+					}
+
+					if (result.allowed) {
+						// Hide login overlay and start game
+						document.getElementById('login-overlay').style.display = 'none';
+						if (!gameInitialized) {
+							gameInitialized = true;
+							initializeGame();
+						}
+					} else {
+						// Redirect to closed page with reason
+						const reason = encodeURIComponent(result.reason || 'Access denied');
+						window.location.href = `/closed.html?reason=${reason}`;
+					}
+
+				} catch (err) {
+					console.error('Access check error:', err);
+					showError('Could not verify access. Please try again.');
+					showLoading(false);
+				}
+			}
+
+			/**
+			 * Parse JWT token (client-side, for display only)
+			 */
+			function parseJwt(token) {
+				const base64Url = token.split('.')[1];
+				const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+				const jsonPayload = decodeURIComponent(atob(base64).split('').map(function(c) {
+					return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
+				}).join(''));
+				return JSON.parse(jsonPayload);
+			}
+
+			/**
+			 * Show/hide loading state
+			 */
+			function showLoading(show) {
+				const el = document.getElementById('login-loading');
+				if (el) el.style.display = show ? 'block' : 'none';
+			}
+
+			/**
+			 * Show error message
+			 */
+			function showError(message) {
+				const el = document.getElementById('login-error');
+				if (el) {
+					el.textContent = message;
+					el.style.display = 'block';
+				}
+			}
+
+			/**
+			 * Hide error message
+			 */
+			function hideError() {
+				const el = document.getElementById('login-error');
+				if (el) el.style.display = 'none';
+			}
+
+			/**
+			 * Initialize the game
+			 */
+			function initializeGame() {
+				if (window.location.href.indexOf("file:") === 0) {
+					alert("HTTP please, do not open this file locally, run a local HTTP server and load it via HTTP");
+					return;
+				}
+
+				var relayId = Math.floor(Math.random() * 2);
+				window.eaglercraftXOpts = {
+					demoMode: false,
+					container: "game_frame",
+					assetsURI: "assets.epk",
+					localesURI: "lang/",
+					worldsDB: "worlds",
+					servers: [
+						{ addr: "wss://514d-150-230-221-162.ngrok-free.app", name: "Scratchmasterj21 server" }
+					],
+					relays: [
+						{ addr: "wss://mrelay.gfa-scratchlab.com/", comment: "scratchmasterj21 #2", primary: relayId == 0 },
+					],
+					forceProfanityFilter: true,
+					allowBootMenu: false,
+					showBootMenuOnLaunch: false,
+					enableMinceraft: false,
+					allowServerRedirects: false
+				};
+
+				var q = window.location.search;
+				if ((typeof q === "string") && q[0] === "?" && (typeof window.URLSearchParams !== "undefined")) {
+					q = new window.URLSearchParams(q);
+					var s = q.get("server");
+					if (s) window.eaglercraftXOpts.joinServer = s;
+				}
+
+				main(); // Start the game
+			}
+
+			// Initialize Google Sign-In when page loads
+			window.addEventListener('load', initGoogleSignIn);
+		</script>
+		<script>
+			window.onbeforeunload = null;
+			window.addEventListener("beforeunload", function (event) {
+				event.stopImmediatePropagation();
+			}, true);
+		</script>
+	</head>
+	<body style="margin:0px;width:100%;height:100%;overflow:hidden;background-color:black;">
+		<!-- Login Overlay -->
+		<div id="login-overlay">
+			<div class="login-container">
+				<h1 class="login-title">🎮 Minecraft 1.8</h1>
+				<p class="login-subtitle">Sign in with your school account to play</p>
+				<div class="school-badge">🏫 @felice.ed.jp accounts only</div>
+				<div id="google-signin-btn"></div>
+				<div id="login-loading" class="login-loading">Verifying access</div>
+				<div id="login-error" class="login-error"></div>
+			</div>
+		</div>
+		
+		<!-- Game Container -->
+		<div id="game_frame" style="width:100%;height:100%;"></div>
+	</body>
+</html>
