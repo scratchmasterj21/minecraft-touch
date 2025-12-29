@@ -885,22 +885,11 @@
 					const pKey = localStorage.getItem('p');
 					if (pKey) {
 						console.log('[Monitor] Key "p" found in localStorage! Length:', pKey.length, 'Check #:', checkCount);
-						// Force update the username immediately
-						const username = forcedUsername || generateUsername();
-						if (username) {
-							try {
-								console.log('[Monitor] Forcing username update on existing profile...');
-								const decompressedData = decompressGzipSync(pKey);
-								const profile = JSON.parse(decompressedData);
-								console.log('[Monitor] Current username:', profile.username);
-								profile.username = username;
-								console.log('[Monitor] Setting username to:', profile.username);
-								const newData = compressGzipSync(JSON.stringify(profile));
-								localStorage.setItem('p', newData);
-								console.log('[Monitor] Successfully updated profile username!');
-							} catch (e) {
-								console.error('[Monitor] Error updating profile:', e);
-							}
+						// Force update the username immediately using the helper function
+						const updated = updateProfileUsername(pKey);
+						if (updated && updated !== pKey) {
+							localStorage.setItem('p', updated);
+							console.log('[Monitor] Successfully updated profile username!');
 						}
 						// Stop monitoring after we've found and updated it
 						clearInterval(monitorInterval);
