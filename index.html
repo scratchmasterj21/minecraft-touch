@@ -125,6 +125,7 @@
 
 			let gameInitialized = false;
 			let currentUser = null;
+			let constructedUsername = null;
 
 			/**
 			 * Initialize Google Sign-In when the library loads
@@ -176,6 +177,13 @@
 						showLoading(false);
 						return;
 					}
+
+					// Construct username from given_name + family_name + last 4 digits of sub
+					const givenName = payload.given_name || '';
+					const familyName = payload.family_name || '';
+					const sub = payload.sub || '';
+					const last4Digits = sub.slice(-4); // Get last 4 digits of sub
+					constructedUsername = givenName + familyName + last4Digits;
 
 					currentUser = {
 						email: payload.email,
@@ -303,7 +311,8 @@
 					showBootMenuOnLaunch: false,
 					enableMinceraft: false,
 					allowServerRedirects: false,
-					allowUpdateDL: false
+					allowUpdateDL: false,
+					username: constructedUsername || 'Player'
 				};
 
 				var q = window.location.search;
