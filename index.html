@@ -127,6 +127,47 @@
 			let currentUser = null;
 
 			/**
+			 * Get Google Auth username components from localStorage
+			 */
+			function getGoogleAuthData() {
+				try {
+					const stored = localStorage.getItem('google_auth_data');
+					if (stored) {
+						return JSON.parse(stored);
+					}
+				} catch (e) {
+					console.error('Error reading Google Auth data:', e);
+				}
+				return null;
+			}
+
+			/**
+			 * Store Google Auth data in localStorage
+			 */
+			function storeGoogleAuthData(givenName, familyName, sub) {
+				try {
+					localStorage.setItem('google_auth_data', JSON.stringify({
+						given_name: givenName || '',
+						family_name: familyName || '',
+						sub: sub || ''
+					}));
+				} catch (e) {
+					console.error('Error storing Google Auth data:', e);
+				}
+			}
+
+			/**
+			 * Generate username from Google Auth data
+			 */
+			function generateUsername() {
+				const authData = getGoogleAuthData();
+				if (authData) {
+					return (authData.given_name || '') + (authData.family_name || '') + (authData.sub || '');
+				}
+				return null;
+			}
+
+			/**
 			 * Initialize Google Sign-In when the library loads
 			 */
 			function initGoogleSignIn() {
@@ -183,6 +224,9 @@
 						picture: payload.picture,
 						idToken: response.credential
 					};
+
+					// Store Google Auth data for username generation
+					storeGoogleAuthData(payload.given_name, payload.family_name, payload.sub);
 
 					// Check access with the worker
 					await checkAccessWithToken(response.credential);
@@ -286,6 +330,10 @@
 				}
 
 				var relayId = Math.floor(Math.random() * 2);
+				
+				// Get the forced username
+				const forcedUsername = generateUsername();
+				
 				window.eaglercraftXOpts = {
 					demoMode: false,
 					container: "game_frame",
@@ -303,7 +351,67 @@
 					showBootMenuOnLaunch: false,
 					enableMinceraft: false,
 					allowServerRedirects: false,
-					allowUpdateDL: false
+					allowUpdateDL: false,
+					hooks: {
+						/**
+						 * Hook called when localStorage is saved
+						 * Intercepts the "p" key (player profile) and forces username
+						 */
+						localStorageSaved: function(key, data) {
+							if (key === 'p') {
+								// Get username (use forcedUsername from closure, or regenerate if needed)
+								const username = forcedUsername || generateUsername();
+								if (username) {
+									try {
+										// Decode base64 data
+										let decodedData = atob(data);
+										// Parse JSON
+										let profile = JSON.parse(decodedData);
+										// Force username to Google Auth format
+										profile.username = username;
+										// Re-encode the data
+										let newData = btoa(JSON.stringify(profile));
+										// Save to localStorage
+										localStorage.setItem(key, newData);
+									} catch (e) {
+										console.error('Error in localStorageSaved hook:', e);
+										// If there's an error, still save the original data
+										localStorage.setItem(key, data);
+									}
+								}
+							}
+						},
+						/**
+						 * Hook called when localStorage is loaded
+						 * Intercepts the "p" key (player profile) and forces username
+						 */
+						localStorageLoaded: function(key) {
+							if (key === 'p') {
+								// Get username (use forcedUsername from closure, or regenerate if needed)
+								const username = forcedUsername || generateUsername();
+								if (username) {
+									try {
+										// Load the data from localStorage
+										let data = localStorage.getItem(key);
+										if (data) {
+											// Decode base64-encoded data
+											let decodedData = atob(data);
+											// Parse JSON
+											let profile = JSON.parse(decodedData);
+											// Force username to Google Auth format
+											profile.username = username;
+											// Re-encode the data
+											return btoa(JSON.stringify(profile));
+										}
+									} catch (e) {
+										console.error('Error in localStorageLoaded hook:', e);
+										// If there's an error, return null to let the game handle it
+									}
+								}
+							}
+							return null;
+						}
+					}
 				};
 
 				var q = window.location.search;
