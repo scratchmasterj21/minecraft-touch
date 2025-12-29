@@ -185,16 +185,24 @@
 			 */
 			function decompressGzipSync(base64Data) {
 				try {
+					console.log('[GZIP] Starting decompression, input length:', base64Data.length);
+					
 					// Decode base64 to binary
 					const binaryString = atob(base64Data);
+					console.log('[GZIP] Base64 decoded, binary string length:', binaryString.length);
+					
 					const bytes = new Uint8Array(binaryString.length);
 					for (let i = 0; i < binaryString.length; i++) {
 						bytes[i] = binaryString.charCodeAt(i);
 					}
+					console.log('[GZIP] Converted to Uint8Array, length:', bytes.length);
+					console.log('[GZIP] First 20 bytes:', Array.from(bytes.slice(0, 20)));
 					
 					// Use pako for synchronous decompression
 					if (typeof pako !== 'undefined') {
+						console.log('[GZIP] Using pako to decompress...');
 						const decompressed = pako.inflate(bytes, { to: 'string' });
+						console.log('[GZIP] Decompression successful, output length:', decompressed.length);
 						return decompressed;
 					} else {
 						console.error('[GZIP] Pako library not loaded! Cannot decompress.');
@@ -202,6 +210,8 @@
 					}
 				} catch (e) {
 					console.error('[GZIP] Decompression error:', e);
+					console.error('[GZIP] Error name:', e.name);
+					console.error('[GZIP] Error message:', e.message);
 					throw e;
 				}
 			}
@@ -524,25 +534,34 @@
 								console.log('[Hook] localStorageSaved - Username to force:', username);
 								if (username) {
 									try {
+										console.log('[Hook] localStorageSaved - Raw data preview (first 100 chars):', data.substring(0, 100));
+										console.log('[Hook] localStorageSaved - Data length:', data.length);
 										console.log('[Hook] localStorageSaved - Decompressing GZIP data...');
 										// Decompress GZIP data synchronously
 										const decompressedData = decompressGzipSync(data);
-										console.log('[Hook] localStorageSaved - Decompressed data (first 200 chars):', decompressedData.substring(0, 200));
+										console.log('[Hook] localStorageSaved - Decompressed data length:', decompressedData.length);
+										console.log('[Hook] localStorageSaved - Decompressed data (first 500 chars):', decompressedData.substring(0, 500));
+										
 										// Parse JSON
 										const profile = JSON.parse(decompressedData);
 										console.log('[Hook] localStorageSaved - Profile structure:', Object.keys(profile));
 										console.log('[Hook] localStorageSaved - Current username:', profile.username);
+										
 										// Force username to Google Auth format
 										profile.username = username;
 										console.log('[Hook] localStorageSaved - New username set to:', profile.username);
+										
 										// Re-compress and encode synchronously
 										const newData = compressGzipSync(JSON.stringify(profile));
 										console.log('[Hook] localStorageSaved - Re-compressed data length:', newData.length);
+										
 										// Save to localStorage (game already saved, but we overwrite with modified version)
 										localStorage.setItem(key, newData);
 										console.log('[Hook] localStorageSaved - Successfully saved modified profile to localStorage');
 									} catch (e) {
 										console.error('[Hook] localStorageSaved - Error:', e);
+										console.error('[Hook] localStorageSaved - Error name:', e.name);
+										console.error('[Hook] localStorageSaved - Error message:', e.message);
 										console.error('[Hook] localStorageSaved - Error stack:', e.stack);
 										// If there's an error, the game already saved the original data, so we're fine
 									}
