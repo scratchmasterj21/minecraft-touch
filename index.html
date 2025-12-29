@@ -16,6 +16,9 @@
 		<!-- Google Identity Services -->
 		<script src="https://accounts.google.com/gsi/client" async defer></script>
 		
+		<!-- Pako for GZIP compression/decompression -->
+		<script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
+		
 		<!-- Game code -->
 		<script type="text/javascript" src="classes.js"></script>
 
@@ -172,6 +175,56 @@
 				}
 				console.warn('[Username] No auth data found, returning null');
 				return null;
+			}
+
+			/**
+			 * Decompress GZIP data synchronously (data is base64 string, returns decompressed string)
+			 */
+			function decompressGzipSync(base64Data) {
+				try {
+					// Decode base64 to binary
+					const binaryString = atob(base64Data);
+					const bytes = new Uint8Array(binaryString.length);
+					for (let i = 0; i < binaryString.length; i++) {
+						bytes[i] = binaryString.charCodeAt(i);
+					}
+					
+					// Use pako for synchronous decompression
+					if (typeof pako !== 'undefined') {
+						const decompressed = pako.inflate(bytes, { to: 'string' });
+						return decompressed;
+					} else {
+						console.error('[GZIP] Pako library not loaded! Cannot decompress.');
+						throw new Error('Pako library required for GZIP decompression');
+					}
+				} catch (e) {
+					console.error('[GZIP] Decompression error:', e);
+					throw e;
+				}
+			}
+
+			/**
+			 * Compress data to GZIP synchronously (string input, returns base64 string)
+			 */
+			function compressGzipSync(dataString) {
+				try {
+					// Use pako for synchronous compression
+					if (typeof pako !== 'undefined') {
+						const compressed = pako.gzip(dataString);
+						// Convert to base64
+						let binaryString = '';
+						for (let i = 0; i < compressed.length; i++) {
+							binaryString += String.fromCharCode(compressed[i]);
+						}
+						return btoa(binaryString);
+					} else {
+						console.error('[GZIP] Pako library not loaded! Cannot compress.');
+						throw new Error('Pako library required for GZIP compression');
+					}
+				} catch (e) {
+					console.error('[GZIP] Compression error:', e);
+					throw e;
+				}
 			}
 
 			/**
@@ -384,45 +437,37 @@
 						localStorageSaved: function(key, data) {
 							console.log('[Hook] localStorageSaved called with key:', key, 'data type:', typeof data, 'data length:', data ? data.length : 0);
 							
-							// Check if this might be a profile key (even if not exactly "p")
-							if (key === 'p' || key.includes('profile') || key.includes('username') || key === '_eaglercraftX.p') {
-								console.log('[Hook] localStorageSaved - This looks like a profile key!');
-							}
-							
 							if (key === 'p') {
 								// Get username (use forcedUsername from closure, or regenerate if needed)
 								const username = forcedUsername || generateUsername();
 								console.log('[Hook] localStorageSaved - Username to force:', username);
 								if (username) {
 									try {
-										console.log('[Hook] localStorageSaved - Attempting to decode data...');
-										// Decode base64 data
-										let decodedData = atob(data);
-										console.log('[Hook] localStorageSaved - Decoded data (first 200 chars):', decodedData.substring(0, 200));
+										console.log('[Hook] localStorageSaved - Decompressing GZIP data...');
+										// Decompress GZIP data synchronously
+										const decompressedData = decompressGzipSync(data);
+										console.log('[Hook] localStorageSaved - Decompressed data (first 200 chars):', decompressedData.substring(0, 200));
 										// Parse JSON
-										let profile = JSON.parse(decodedData);
+										const profile = JSON.parse(decompressedData);
 										console.log('[Hook] localStorageSaved - Profile structure:', Object.keys(profile));
 										console.log('[Hook] localStorageSaved - Current username:', profile.username);
 										// Force username to Google Auth format
 										profile.username = username;
 										console.log('[Hook] localStorageSaved - New username set to:', profile.username);
-										// Re-encode the data
-										let newData = btoa(JSON.stringify(profile));
-										console.log('[Hook] localStorageSaved - Re-encoded data length:', newData.length);
-										// Save to localStorage
+										// Re-compress and encode synchronously
+										const newData = compressGzipSync(JSON.stringify(profile));
+										console.log('[Hook] localStorageSaved - Re-compressed data length:', newData.length);
+										// Save to localStorage (game already saved, but we overwrite with modified version)
 										localStorage.setItem(key, newData);
-										console.log('[Hook] localStorageSaved - Successfully saved to localStorage');
+										console.log('[Hook] localStorageSaved - Successfully saved modified profile to localStorage');
 									} catch (e) {
 										console.error('[Hook] localStorageSaved - Error:', e);
 										console.error('[Hook] localStorageSaved - Error stack:', e.stack);
-										// If there's an error, still save the original data
-										localStorage.setItem(key, data);
+										// If there's an error, the game already saved the original data, so we're fine
 									}
 								} else {
 									console.warn('[Hook] localStorageSaved - No username available, skipping');
 								}
-							} else {
-								console.log('[Hook] localStorageSaved - Key is not "p", ignoring');
 							}
 						},
 						/**
@@ -432,11 +477,6 @@
 						localStorageLoaded: function(key) {
 							console.log('[Hook] localStorageLoaded called with key:', key);
 							
-							// Check if this might be a profile key (even if not exactly "p")
-							if (key === 'p' || key.includes('profile') || key.includes('username') || key === '_eaglercraftX.p') {
-								console.log('[Hook] localStorageLoaded - This looks like a profile key!');
-							}
-							
 							if (key === 'p') {
 								// Get username (use forcedUsername from closure, or regenerate if needed)
 								const username = forcedUsername || generateUsername();
@@ -444,27 +484,34 @@
 								if (username) {
 									try {
 										// Load the data from localStorage
-										let data = localStorage.getItem(key);
+										const data = localStorage.getItem(key);
 										console.log('[Hook] localStorageLoaded - Data from localStorage exists:', !!data, 'length:', data ? data.length : 0);
 										if (data) {
-											console.log('[Hook] localStorageLoaded - Attempting to decode data...');
-											// Decode base64-encoded data
-											let decodedData = atob(data);
-											console.log('[Hook] localStorageLoaded - Decoded data (first 200 chars):', decodedData.substring(0, 200));
-											// Parse JSON
-											let profile = JSON.parse(decodedData);
-											console.log('[Hook] localStorageLoaded - Profile structure:', Object.keys(profile));
-											console.log('[Hook] localStorageLoaded - Current username:', profile.username);
-											// Force username to Google Auth format
-											profile.username = username;
-											console.log('[Hook] localStorageLoaded - New username set to:', profile.username);
-											// Re-encode the data
-											let newData = btoa(JSON.stringify(profile));
-											console.log('[Hook] localStorageLoaded - Re-encoded data length:', newData.length);
-											console.log('[Hook] localStorageLoaded - Returning modified data');
-											return newData;
+											try {
+												console.log('[Hook] localStorageLoaded - Decompressing GZIP data...');
+												// Decompress GZIP data synchronously
+												const decompressedData = decompressGzipSync(data);
+												console.log('[Hook] localStorageLoaded - Decompressed data (first 200 chars):', decompressedData.substring(0, 200));
+												// Parse JSON
+												const profile = JSON.parse(decompressedData);
+												console.log('[Hook] localStorageLoaded - Profile structure:', Object.keys(profile));
+												console.log('[Hook] localStorageLoaded - Current username:', profile.username);
+												// Force username to Google Auth format
+												profile.username = username;
+												console.log('[Hook] localStorageLoaded - New username set to:', profile.username);
+												// Re-compress and encode synchronously
+												const newData = compressGzipSync(JSON.stringify(profile));
+												console.log('[Hook] localStorageLoaded - Re-compressed data length:', newData.length);
+												console.log('[Hook] localStorageLoaded - Returning modified data');
+												return newData;
+											} catch (e) {
+												console.error('[Hook] localStorageLoaded - Error:', e);
+												console.error('[Hook] localStorageLoaded - Error stack:', e.stack);
+												// If there's an error, return null to let the game handle it
+												return null;
+											}
 										} else {
-											console.log('[Hook] localStorageLoaded - No data in localStorage for key "p"');
+											console.log('[Hook] localStorageLoaded - No data in localStorage for key "p", returning null');
 										}
 									} catch (e) {
 										console.error('[Hook] localStorageLoaded - Error:', e);
@@ -474,8 +521,6 @@
 								} else {
 									console.warn('[Hook] localStorageLoaded - No username available, returning null');
 								}
-							} else {
-								console.log('[Hook] localStorageLoaded - Key is not "p", returning null');
 							}
 							return null;
 						}
