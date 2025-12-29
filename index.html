@@ -348,6 +348,16 @@
 				const forcedUsername = generateUsername();
 				console.log('[Game Init] Forced username:', forcedUsername);
 				
+				// Check what keys exist in localStorage
+				console.log('[Game Init] Checking localStorage keys...');
+				for (let i = 0; i < localStorage.length; i++) {
+					const key = localStorage.key(i);
+					console.log('[Game Init] localStorage key:', key, 'value preview:', localStorage.getItem(key)?.substring(0, 50));
+					if (key === 'p' || key.includes('profile') || key.includes('username')) {
+						console.log('[Game Init] Found potential profile key:', key);
+					}
+				}
+				
 				window.eaglercraftXOpts = {
 					demoMode: false,
 					container: "game_frame",
@@ -373,6 +383,12 @@
 						 */
 						localStorageSaved: function(key, data) {
 							console.log('[Hook] localStorageSaved called with key:', key, 'data type:', typeof data, 'data length:', data ? data.length : 0);
+							
+							// Check if this might be a profile key (even if not exactly "p")
+							if (key === 'p' || key.includes('profile') || key.includes('username') || key === '_eaglercraftX.p') {
+								console.log('[Hook] localStorageSaved - This looks like a profile key!');
+							}
+							
 							if (key === 'p') {
 								// Get username (use forcedUsername from closure, or regenerate if needed)
 								const username = forcedUsername || generateUsername();
@@ -415,6 +431,12 @@
 						 */
 						localStorageLoaded: function(key) {
 							console.log('[Hook] localStorageLoaded called with key:', key);
+							
+							// Check if this might be a profile key (even if not exactly "p")
+							if (key === 'p' || key.includes('profile') || key.includes('username') || key === '_eaglercraftX.p') {
+								console.log('[Hook] localStorageLoaded - This looks like a profile key!');
+							}
+							
 							if (key === 'p') {
 								// Get username (use forcedUsername from closure, or regenerate if needed)
 								const username = forcedUsername || generateUsername();
@@ -468,6 +490,27 @@
 				}
 
 				main(); // Start the game
+				
+				// Monitor localStorage for profile creation
+				setTimeout(function() {
+					console.log('[Monitor] Checking localStorage after 5 seconds...');
+					for (let i = 0; i < localStorage.length; i++) {
+						const key = localStorage.key(i);
+						if (key === 'p' || key.includes('profile') || key.includes('username')) {
+							console.log('[Monitor] Found profile-related key:', key);
+							const value = localStorage.getItem(key);
+							console.log('[Monitor] Value preview:', value?.substring(0, 100));
+						}
+					}
+				}, 5000);
+				
+				// Also check periodically
+				setInterval(function() {
+					const pKey = localStorage.getItem('p');
+					if (pKey) {
+						console.log('[Monitor] Key "p" exists in localStorage, length:', pKey.length);
+					}
+				}, 2000);
 			}
 
 			// Initialize Google Sign-In when page loads
