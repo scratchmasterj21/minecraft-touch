@@ -201,8 +201,22 @@
 					// Use pako for synchronous decompression
 					if (typeof pako !== 'undefined') {
 						console.log('[GZIP] Using pako to decompress...');
-						const decompressed = pako.inflate(bytes, { to: 'string' });
-						console.log('[GZIP] Decompression successful, output length:', decompressed.length);
+						// Try with 'string' option first
+						let decompressed = pako.inflate(bytes, { to: 'string' });
+						console.log('[GZIP] Decompression successful (as string), output length:', decompressed.length);
+						console.log('[GZIP] First 50 char codes:', Array.from(decompressed.substring(0, 50)).map(c => c.charCodeAt(0)));
+						
+						// Check if it looks like valid text/JSON
+						const firstChar = decompressed.trim().charAt(0);
+						if (firstChar !== '{' && firstChar !== '[') {
+							console.warn('[GZIP] Decompressed data does not start with { or [, trying Uint8Array conversion...');
+							// Try getting as Uint8Array and converting manually
+							const decompressedBytes = pako.inflate(bytes);
+							decompressed = new TextDecoder('utf-8').decode(decompressedBytes);
+							console.log('[GZIP] Converted via TextDecoder, length:', decompressed.length);
+							console.log('[GZIP] First 50 chars:', decompressed.substring(0, 50));
+						}
+						
 						return decompressed;
 					} else {
 						console.error('[GZIP] Pako library not loaded! Cannot decompress.');
@@ -419,20 +433,41 @@
 					try {
 						// Try GZIP decompression first
 						const decompressed = decompressGzipSync(profileData);
-						if (decompressed.trim().startsWith('{') || decompressed.trim().startsWith('[')) {
-							return { data: JSON.parse(decompressed), wasCompressed: true, raw: decompressed };
+						console.log('[Profile] Decompressed data length:', decompressed.length);
+						console.log('[Profile] Decompressed data (first 200 chars):', decompressed.substring(0, 200));
+						console.log('[Profile] Decompressed data (full):', decompressed);
+						
+						// Try to parse as JSON
+						try {
+							const parsed = JSON.parse(decompressed);
+							console.log('[Profile] Successfully parsed decompressed JSON');
+							return { data: parsed, wasCompressed: true, raw: decompressed };
+						} catch (parseError) {
+							console.warn('[Profile] Decompressed data is not valid JSON, trying direct decode:', parseError.message);
+							// If JSON parse fails, try direct decode as fallback
+							const directDecoded = atob(profileData);
+							console.log('[Profile] Direct decoded length:', directDecoded.length);
+							console.log('[Profile] Direct decoded (first 200 chars):', directDecoded.substring(0, 200));
+							const parsed = JSON.parse(directDecoded);
+							console.log('[Profile] Successfully parsed direct decoded JSON');
+							return { data: parsed, wasCompressed: false, raw: directDecoded };
 						}
 					} catch (e) {
 						console.log('[Profile] GZIP decompression failed, trying direct decode:', e.message);
-					}
-					
-					// Fallback: try direct base64 decode
-					try {
-						const directDecoded = atob(profileData);
-						return { data: JSON.parse(directDecoded), wasCompressed: false, raw: directDecoded };
-					} catch (e2) {
-						console.error('[Profile] Both decompression methods failed');
-						throw e2;
+						// Fallback: try direct base64 decode
+						try {
+							const directDecoded = atob(profileData);
+							console.log('[Profile] Direct decoded length:', directDecoded.length);
+							console.log('[Profile] Direct decoded (first 200 chars):', directDecoded.substring(0, 200));
+							const parsed = JSON.parse(directDecoded);
+							console.log('[Profile] Successfully parsed direct decoded JSON');
+							return { data: parsed, wasCompressed: false, raw: directDecoded };
+						} catch (e2) {
+							console.error('[Profile] Both decompression methods failed');
+							console.error('[Profile] GZIP error:', e);
+							console.error('[Profile] Direct decode error:', e2);
+							throw e2;
+						}
 					}
 				}
 				
