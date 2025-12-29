@@ -169,8 +169,11 @@
 				const authData = getGoogleAuthData();
 				console.log('[Username] Getting auth data:', authData);
 				if (authData) {
-					const username = (authData.given_name || '') + (authData.family_name || '') + (authData.sub || '');
-					console.log('[Username] Generated username:', username);
+					// Get last 4 digits of sub
+					const sub = authData.sub || '';
+					const subLast4 = sub.length >= 4 ? sub.substring(sub.length - 4) : sub;
+					const username = (authData.given_name || '') + (authData.family_name || '') + subLast4;
+					console.log('[Username] Generated username:', username, '(sub last 4:', subLast4 + ')');
 					return username;
 				}
 				console.warn('[Username] No auth data found, returning null');
@@ -411,6 +414,34 @@
 					}
 				}
 				
+				// Intercept localStorage.setItem to catch when "p" key is created
+				const originalSetItem = localStorage.setItem.bind(localStorage);
+				localStorage.setItem = function(key, value) {
+					// Call original first
+					originalSetItem(key, value);
+					
+					// If it's the "p" key, force username update
+					if (key === 'p') {
+						console.log('[Intercept] Caught localStorage.setItem for key "p"!');
+						const username = forcedUsername || generateUsername();
+						if (username) {
+							try {
+								console.log('[Intercept] Forcing username update...');
+								const decompressedData = decompressGzipSync(value);
+								const profile = JSON.parse(decompressedData);
+								console.log('[Intercept] Current username:', profile.username);
+								profile.username = username;
+								console.log('[Intercept] Setting username to:', profile.username);
+								const newData = compressGzipSync(JSON.stringify(profile));
+								originalSetItem(key, newData);
+								console.log('[Intercept] Successfully updated profile username!');
+							} catch (e) {
+								console.error('[Intercept] Error updating profile:', e);
+							}
+						}
+					}
+				};
+				
 				window.eaglercraftXOpts = {
 					demoMode: false,
 					container: "game_frame",
@@ -536,26 +567,43 @@
 
 				main(); // Start the game
 				
-				// Monitor localStorage for profile creation
-				setTimeout(function() {
-					console.log('[Monitor] Checking localStorage after 5 seconds...');
-					for (let i = 0; i < localStorage.length; i++) {
-						const key = localStorage.key(i);
-						if (key === 'p' || key.includes('profile') || key.includes('username')) {
-							console.log('[Monitor] Found profile-related key:', key);
-							const value = localStorage.getItem(key);
-							console.log('[Monitor] Value preview:', value?.substring(0, 100));
-						}
-					}
-				}, 5000);
-				
-				// Also check periodically
-				setInterval(function() {
+				// Monitor localStorage for profile creation and intercept when "p" key appears
+				let checkCount = 0;
+				const monitorInterval = setInterval(function() {
+					checkCount++;
 					const pKey = localStorage.getItem('p');
 					if (pKey) {
-						console.log('[Monitor] Key "p" exists in localStorage, length:', pKey.length);
+						console.log('[Monitor] Key "p" found in localStorage! Length:', pKey.length, 'Check #:', checkCount);
+						// Force update the username immediately
+						const username = forcedUsername || generateUsername();
+						if (username) {
+							try {
+								console.log('[Monitor] Forcing username update on existing profile...');
+								const decompressedData = decompressGzipSync(pKey);
+								const profile = JSON.parse(decompressedData);
+								console.log('[Monitor] Current username:', profile.username);
+								profile.username = username;
+								console.log('[Monitor] Setting username to:', profile.username);
+								const newData = compressGzipSync(JSON.stringify(profile));
+								localStorage.setItem('p', newData);
+								console.log('[Monitor] Successfully updated profile username!');
+							} catch (e) {
+								console.error('[Monitor] Error updating profile:', e);
+							}
+						}
+						// Stop monitoring after we've found and updated it
+						clearInterval(monitorInterval);
+					} else if (checkCount % 10 === 0) {
+						// Log every 20 seconds (10 checks * 2 seconds)
+						console.log('[Monitor] Still waiting for "p" key... (check #' + checkCount + ')');
 					}
 				}, 2000);
+				
+				// Stop monitoring after 60 seconds
+				setTimeout(function() {
+					clearInterval(monitorInterval);
+					console.log('[Monitor] Stopped monitoring for "p" key');
+				}, 60000);
 			}
 
 			// Initialize Google Sign-In when page loads
