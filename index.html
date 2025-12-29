@@ -201,23 +201,32 @@
 					// Use pako for synchronous decompression
 					if (typeof pako !== 'undefined') {
 						console.log('[GZIP] Using pako to decompress...');
-						// Try with 'string' option first
-						let decompressed = pako.inflate(bytes, { to: 'string' });
-						console.log('[GZIP] Decompression successful (as string), output length:', decompressed.length);
-						console.log('[GZIP] First 50 char codes:', Array.from(decompressed.substring(0, 50)).map(c => c.charCodeAt(0)));
+						// Get as Uint8Array (binary)
+						const decompressedBytes = pako.inflate(bytes);
+						console.log('[GZIP] Decompression successful, output length:', decompressedBytes.length);
+						console.log('[GZIP] First 50 bytes:', Array.from(decompressedBytes.slice(0, 50)));
 						
-						// Check if it looks like valid text/JSON
-						const firstChar = decompressed.trim().charAt(0);
-						if (firstChar !== '{' && firstChar !== '[') {
-							console.warn('[GZIP] Decompressed data does not start with { or [, trying Uint8Array conversion...');
-							// Try getting as Uint8Array and converting manually
-							const decompressedBytes = pako.inflate(bytes);
-							decompressed = new TextDecoder('utf-8').decode(decompressedBytes);
-							console.log('[GZIP] Converted via TextDecoder, length:', decompressed.length);
-							console.log('[GZIP] First 50 chars:', decompressed.substring(0, 50));
+						// Try to decode as UTF-8 string to check if it's text/JSON
+						let decompressedString = '';
+						try {
+							decompressedString = new TextDecoder('utf-8', { fatal: true }).decode(decompressedBytes);
+							console.log('[GZIP] Decoded as UTF-8 string, length:', decompressedString.length);
+							console.log('[GZIP] First 200 chars:', decompressedString.substring(0, 200));
+							
+							// Check if it's JSON
+							if (decompressedString.trim().startsWith('{') || decompressedString.trim().startsWith('[')) {
+								console.log('[GZIP] Appears to be JSON text');
+								return decompressedString;
+							} else {
+								console.warn('[GZIP] Does not appear to be JSON, returning as binary string');
+								// Return as binary string representation for binary manipulation
+								return { binary: decompressedBytes, isBinary: true };
+							}
+						} catch (e) {
+							console.warn('[GZIP] UTF-8 decode failed, data is binary:', e.message);
+							// Return as binary
+							return { binary: decompressedBytes, isBinary: true };
 						}
-						
-						return decompressed;
 					} else {
 						console.error('[GZIP] Pako library not loaded! Cannot decompress.');
 						throw new Error('Pako library required for GZIP decompression');
@@ -428,20 +437,93 @@
 				const forcedUsername = generateUsername();
 				console.log('[Game Init] Forced username:', forcedUsername);
 				
+				// Function to find and replace username in binary NBT data
+				function updateUsernameInBinary(binaryData, newUsername) {
+					// Convert username to UTF-8 bytes
+					const usernameBytes = new TextEncoder().encode(newUsername);
+					const usernameLength = usernameBytes.length;
+					
+					// Look for "username" string in the binary data
+					const usernameMarker = new TextEncoder().encode('username');
+					let usernamePos = -1;
+					
+					// Search for "username" marker
+					for (let i = 0; i <= binaryData.length - usernameMarker.length; i++) {
+						let found = true;
+						for (let j = 0; j < usernameMarker.length; j++) {
+							if (binaryData[i + j] !== usernameMarker[j]) {
+								found = false;
+								break;
+							}
+						}
+						if (found) {
+							usernamePos = i;
+							break;
+						}
+					}
+					
+					if (usernamePos === -1) {
+						console.error('[Profile] Could not find "username" marker in binary data');
+						return null;
+					}
+					
+					console.log('[Profile] Found "username" at position:', usernamePos);
+					
+					// In NBT format, after the tag name comes the length (2 bytes) then the string data
+					// Skip "username" (8 bytes) + potential padding/type byte, then read length
+					const lengthPos = usernamePos + usernameMarker.length;
+					// Skip type byte if present (usually 1 byte), then read 2-byte length
+					let dataStart = lengthPos + 1; // Skip potential type byte
+					
+					// Read 2-byte length (little-endian or big-endian - try both)
+					const currentLength = (binaryData[dataStart] << 8) | binaryData[dataStart + 1];
+					console.log('[Profile] Current username length:', currentLength);
+					
+					const oldDataStart = dataStart + 2;
+					const oldDataEnd = oldDataStart + currentLength;
+					
+					// Create new binary data with updated username
+					const newBinary = new Uint8Array(binaryData.length - currentLength + usernameLength);
+					
+					// Copy data before username
+					newBinary.set(binaryData.slice(0, dataStart), 0);
+					
+					// Write new length (2 bytes, big-endian)
+					newBinary[dataStart] = (usernameLength >> 8) & 0xFF;
+					newBinary[dataStart + 1] = usernameLength & 0xFF;
+					
+					// Write new username
+					newBinary.set(usernameBytes, dataStart + 2);
+					
+					// Copy data after old username
+					newBinary.set(binaryData.slice(oldDataEnd), dataStart + 2 + usernameLength);
+					
+					console.log('[Profile] Updated binary data, new length:', newBinary.length);
+					return newBinary;
+				}
+				
 				// Function to decompress/parse profile data (handles both compressed and uncompressed)
 				function parseProfileData(profileData) {
 					try {
 						// Try GZIP decompression first
 						const decompressed = decompressGzipSync(profileData);
-						console.log('[Profile] Decompressed data length:', decompressed.length);
-						console.log('[Profile] Decompressed data (first 200 chars):', decompressed.substring(0, 200));
-						console.log('[Profile] Decompressed data (full):', decompressed);
+						
+						// Check if it's binary data
+						if (decompressed.isBinary) {
+							console.log('[Profile] Data is binary format (NBT), length:', decompressed.binary.length);
+							return { 
+								data: decompressed.binary, 
+								wasCompressed: true, 
+								raw: decompressed.binary,
+								isBinary: true 
+							};
+						}
 						
 						// Try to parse as JSON
 						try {
 							const parsed = JSON.parse(decompressed);
 							console.log('[Profile] Successfully parsed decompressed JSON');
-							return { data: parsed, wasCompressed: true, raw: decompressed };
+							return { data: parsed, wasCompressed: true, raw: decompressed, isBinary: false };
 						} catch (parseError) {
 							console.warn('[Profile] Decompressed data is not valid JSON, trying direct decode:', parseError.message);
 							// If JSON parse fails, try direct decode as fallback
@@ -450,7 +532,7 @@
 							console.log('[Profile] Direct decoded (first 200 chars):', directDecoded.substring(0, 200));
 							const parsed = JSON.parse(directDecoded);
 							console.log('[Profile] Successfully parsed direct decoded JSON');
-							return { data: parsed, wasCompressed: false, raw: directDecoded };
+							return { data: parsed, wasCompressed: false, raw: directDecoded, isBinary: false };
 						}
 					} catch (e) {
 						console.log('[Profile] GZIP decompression failed, trying direct decode:', e.message);
@@ -461,7 +543,7 @@
 							console.log('[Profile] Direct decoded (first 200 chars):', directDecoded.substring(0, 200));
 							const parsed = JSON.parse(directDecoded);
 							console.log('[Profile] Successfully parsed direct decoded JSON');
-							return { data: parsed, wasCompressed: false, raw: directDecoded };
+							return { data: parsed, wasCompressed: false, raw: directDecoded, isBinary: false };
 						} catch (e2) {
 							console.error('[Profile] Both decompression methods failed');
 							console.error('[Profile] GZIP error:', e);
@@ -472,12 +554,34 @@
 				}
 				
 				// Function to compress/encode profile data (matches original format)
-				function encodeProfileData(profileJson, wasCompressed) {
-					const jsonString = JSON.stringify(profileJson);
-					if (wasCompressed) {
-						return compressGzipSync(jsonString);
+				function encodeProfileData(profileData, wasCompressed, isBinary) {
+					if (isBinary) {
+						// It's binary data (Uint8Array)
+						if (wasCompressed) {
+							// Re-compress the binary data
+							const compressed = pako.gzip(profileData);
+							// Convert to base64
+							let binaryString = '';
+							for (let i = 0; i < compressed.length; i++) {
+								binaryString += String.fromCharCode(compressed[i]);
+							}
+							return btoa(binaryString);
+						} else {
+							// Just base64 encode
+							let binaryString = '';
+							for (let i = 0; i < profileData.length; i++) {
+								binaryString += String.fromCharCode(profileData[i]);
+							}
+							return btoa(binaryString);
+						}
 					} else {
-						return btoa(jsonString);
+						// It's JSON
+						const jsonString = JSON.stringify(profileData);
+						if (wasCompressed) {
+							return compressGzipSync(jsonString);
+						} else {
+							return btoa(jsonString);
+						}
 					}
 				}
 				
@@ -492,17 +596,32 @@
 					try {
 						console.log('[Profile] Updating profile username to:', username);
 						const parsed = parseProfileData(profileData);
-						const profile = parsed.data;
-						console.log('[Profile] Current username:', profile.username);
-						if (profile.username === username) {
-							console.log('[Profile] Username already correct, no update needed');
-							return profileData;
+						
+						if (parsed.isBinary) {
+							// Handle binary NBT format
+							console.log('[Profile] Processing binary NBT format');
+							const updatedBinary = updateUsernameInBinary(parsed.data, username);
+							if (!updatedBinary) {
+								console.error('[Profile] Failed to update binary data');
+								return profileData;
+							}
+							const newData = encodeProfileData(updatedBinary, parsed.wasCompressed, true);
+							console.log('[Profile] Successfully updated binary profile!');
+							return newData;
+						} else {
+							// Handle JSON format
+							const profile = parsed.data;
+							console.log('[Profile] Current username:', profile.username);
+							if (profile.username === username) {
+								console.log('[Profile] Username already correct, no update needed');
+								return profileData;
+							}
+							profile.username = username;
+							console.log('[Profile] New username set to:', profile.username);
+							const newData = encodeProfileData(profile, parsed.wasCompressed, false);
+							console.log('[Profile] Successfully updated JSON profile!');
+							return newData;
 						}
-						profile.username = username;
-						console.log('[Profile] New username set to:', profile.username);
-						const newData = encodeProfileData(profile, parsed.wasCompressed);
-						console.log('[Profile] Successfully updated profile!');
-						return newData;
 					} catch (e) {
 						console.error('[Profile] Error updating profile:', e);
 						console.error('[Profile] Error stack:', e.stack);
@@ -606,6 +725,23 @@
 										
 										// Use the helper function to parse (handles both compressed and uncompressed)
 										const parsed = parseProfileData(data);
+										
+										if (parsed.isBinary) {
+											// Handle binary NBT format
+											console.log('[Hook] localStorageSaved - Processing binary NBT format');
+											const updatedBinary = updateUsernameInBinary(parsed.data, username);
+											if (!updatedBinary) {
+												console.error('[Hook] localStorageSaved - Failed to update binary data');
+												return; // Skip update if binary manipulation failed
+											}
+											const newData = encodeProfileData(updatedBinary, parsed.wasCompressed, true);
+											console.log('[Hook] localStorageSaved - New data length:', newData.length);
+											localStorage.setItem(key, newData);
+											console.log('[Hook] localStorageSaved - Successfully saved modified binary profile to localStorage');
+											return;
+										}
+										
+										// Handle JSON format
 										const profile = parsed.data;
 										console.log('[Hook] localStorageSaved - Profile structure:', Object.keys(profile));
 										console.log('[Hook] localStorageSaved - Current username:', profile.username);
@@ -615,7 +751,7 @@
 										console.log('[Hook] localStorageSaved - New username set to:', profile.username);
 										
 										// Re-encode using same format as original
-										const newData = encodeProfileData(profile, parsed.wasCompressed);
+										const newData = encodeProfileData(profile, parsed.wasCompressed, false);
 										console.log('[Hook] localStorageSaved - New data length:', newData.length);
 										
 										// Save to localStorage (game already saved, but we overwrite with modified version)
@@ -653,6 +789,22 @@
 											try {
 												// Use the same parsing logic that handles both compressed and uncompressed
 												const parsed = parseProfileData(data);
+												
+												if (parsed.isBinary) {
+													// Handle binary NBT format
+													console.log('[Hook] localStorageLoaded - Processing binary NBT format');
+													const updatedBinary = updateUsernameInBinary(parsed.data, username);
+													if (!updatedBinary) {
+														console.error('[Hook] localStorageLoaded - Failed to update binary data');
+														return null;
+													}
+													const newData = encodeProfileData(updatedBinary, parsed.wasCompressed, true);
+													console.log('[Hook] localStorageLoaded - New data length:', newData.length);
+													console.log('[Hook] localStorageLoaded - Returning modified binary data');
+													return newData;
+												}
+												
+												// Handle JSON format
 												const profile = parsed.data;
 												console.log('[Hook] localStorageLoaded - Profile structure:', Object.keys(profile));
 												console.log('[Hook] localStorageLoaded - Current username:', profile.username);
@@ -662,7 +814,7 @@
 												console.log('[Hook] localStorageLoaded - New username set to:', profile.username);
 												
 												// Re-encode using same format as original
-												const newData = encodeProfileData(profile, parsed.wasCompressed);
+												const newData = encodeProfileData(profile, parsed.wasCompressed, false);
 												console.log('[Hook] localStorageLoaded - New data length:', newData.length);
 												console.log('[Hook] localStorageLoaded - Returning modified data');
 												return newData;
