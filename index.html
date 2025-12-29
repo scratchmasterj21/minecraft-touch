@@ -414,6 +414,38 @@
 				const forcedUsername = generateUsername();
 				console.log('[Game Init] Forced username:', forcedUsername);
 				
+				// Function to decompress/parse profile data (handles both compressed and uncompressed)
+				function parseProfileData(profileData) {
+					try {
+						// Try GZIP decompression first
+						const decompressed = decompressGzipSync(profileData);
+						if (decompressed.trim().startsWith('{') || decompressed.trim().startsWith('[')) {
+							return { data: JSON.parse(decompressed), wasCompressed: true, raw: decompressed };
+						}
+					} catch (e) {
+						console.log('[Profile] GZIP decompression failed, trying direct decode:', e.message);
+					}
+					
+					// Fallback: try direct base64 decode
+					try {
+						const directDecoded = atob(profileData);
+						return { data: JSON.parse(directDecoded), wasCompressed: false, raw: directDecoded };
+					} catch (e2) {
+						console.error('[Profile] Both decompression methods failed');
+						throw e2;
+					}
+				}
+				
+				// Function to compress/encode profile data (matches original format)
+				function encodeProfileData(profileJson, wasCompressed) {
+					const jsonString = JSON.stringify(profileJson);
+					if (wasCompressed) {
+						return compressGzipSync(jsonString);
+					} else {
+						return btoa(jsonString);
+					}
+				}
+				
 				// Function to update profile username
 				function updateProfileUsername(profileData) {
 					const username = forcedUsername || generateUsername();
@@ -424,8 +456,8 @@
 					
 					try {
 						console.log('[Profile] Updating profile username to:', username);
-						const decompressedData = decompressGzipSync(profileData);
-						const profile = JSON.parse(decompressedData);
+						const parsed = parseProfileData(profileData);
+						const profile = parsed.data;
 						console.log('[Profile] Current username:', profile.username);
 						if (profile.username === username) {
 							console.log('[Profile] Username already correct, no update needed');
@@ -433,7 +465,7 @@
 						}
 						profile.username = username;
 						console.log('[Profile] New username set to:', profile.username);
-						const newData = compressGzipSync(JSON.stringify(profile));
+						const newData = encodeProfileData(profile, parsed.wasCompressed);
 						console.log('[Profile] Successfully updated profile!');
 						return newData;
 					} catch (e) {
@@ -536,14 +568,10 @@
 									try {
 										console.log('[Hook] localStorageSaved - Raw data preview (first 100 chars):', data.substring(0, 100));
 										console.log('[Hook] localStorageSaved - Data length:', data.length);
-										console.log('[Hook] localStorageSaved - Decompressing GZIP data...');
-										// Decompress GZIP data synchronously
-										const decompressedData = decompressGzipSync(data);
-										console.log('[Hook] localStorageSaved - Decompressed data length:', decompressedData.length);
-										console.log('[Hook] localStorageSaved - Decompressed data (first 500 chars):', decompressedData.substring(0, 500));
 										
-										// Parse JSON
-										const profile = JSON.parse(decompressedData);
+										// Use the helper function to parse (handles both compressed and uncompressed)
+										const parsed = parseProfileData(data);
+										const profile = parsed.data;
 										console.log('[Hook] localStorageSaved - Profile structure:', Object.keys(profile));
 										console.log('[Hook] localStorageSaved - Current username:', profile.username);
 										
@@ -551,9 +579,9 @@
 										profile.username = username;
 										console.log('[Hook] localStorageSaved - New username set to:', profile.username);
 										
-										// Re-compress and encode synchronously
-										const newData = compressGzipSync(JSON.stringify(profile));
-										console.log('[Hook] localStorageSaved - Re-compressed data length:', newData.length);
+										// Re-encode using same format as original
+										const newData = encodeProfileData(profile, parsed.wasCompressed);
+										console.log('[Hook] localStorageSaved - New data length:', newData.length);
 										
 										// Save to localStorage (game already saved, but we overwrite with modified version)
 										localStorage.setItem(key, newData);
@@ -588,20 +616,19 @@
 										console.log('[Hook] localStorageLoaded - Data from localStorage exists:', !!data, 'length:', data ? data.length : 0);
 										if (data) {
 											try {
-												console.log('[Hook] localStorageLoaded - Decompressing GZIP data...');
-												// Decompress GZIP data synchronously
-												const decompressedData = decompressGzipSync(data);
-												console.log('[Hook] localStorageLoaded - Decompressed data (first 200 chars):', decompressedData.substring(0, 200));
-												// Parse JSON
-												const profile = JSON.parse(decompressedData);
+												// Use the same parsing logic that handles both compressed and uncompressed
+												const parsed = parseProfileData(data);
+												const profile = parsed.data;
 												console.log('[Hook] localStorageLoaded - Profile structure:', Object.keys(profile));
 												console.log('[Hook] localStorageLoaded - Current username:', profile.username);
+												
 												// Force username to Google Auth format
 												profile.username = username;
 												console.log('[Hook] localStorageLoaded - New username set to:', profile.username);
-												// Re-compress and encode synchronously
-												const newData = compressGzipSync(JSON.stringify(profile));
-												console.log('[Hook] localStorageLoaded - Re-compressed data length:', newData.length);
+												
+												// Re-encode using same format as original
+												const newData = encodeProfileData(profile, parsed.wasCompressed);
+												console.log('[Hook] localStorageLoaded - New data length:', newData.length);
 												console.log('[Hook] localStorageLoaded - Returning modified data');
 												return newData;
 											} catch (e) {
