@@ -404,6 +404,35 @@
 				const forcedUsername = generateUsername();
 				console.log('[Game Init] Forced username:', forcedUsername);
 				
+				// Function to update profile username
+				function updateProfileUsername(profileData) {
+					const username = forcedUsername || generateUsername();
+					if (!username) {
+						console.warn('[Profile] No username available for update');
+						return profileData;
+					}
+					
+					try {
+						console.log('[Profile] Updating profile username to:', username);
+						const decompressedData = decompressGzipSync(profileData);
+						const profile = JSON.parse(decompressedData);
+						console.log('[Profile] Current username:', profile.username);
+						if (profile.username === username) {
+							console.log('[Profile] Username already correct, no update needed');
+							return profileData;
+						}
+						profile.username = username;
+						console.log('[Profile] New username set to:', profile.username);
+						const newData = compressGzipSync(JSON.stringify(profile));
+						console.log('[Profile] Successfully updated profile!');
+						return newData;
+					} catch (e) {
+						console.error('[Profile] Error updating profile:', e);
+						console.error('[Profile] Error stack:', e.stack);
+						return profileData; // Return original if error
+					}
+				}
+				
 				// Check what keys exist in localStorage
 				console.log('[Game Init] Checking localStorage keys...');
 				for (let i = 0; i < localStorage.length; i++) {
@@ -414,30 +443,51 @@
 					}
 				}
 				
-				// Intercept localStorage.setItem to catch when "p" key is created
-				const originalSetItem = localStorage.setItem.bind(localStorage);
-				localStorage.setItem = function(key, value) {
+				// Check if "p" key already exists and update it immediately
+				const existingP = localStorage.getItem('p');
+				if (existingP) {
+					console.log('[Profile] Found existing "p" key, updating immediately...');
+					const updated = updateProfileUsername(existingP);
+					if (updated !== existingP) {
+						localStorage.setItem('p', updated);
+						console.log('[Profile] Existing profile updated!');
+					}
+				} else {
+					console.log('[Profile] No existing "p" key found, will intercept when created');
+				}
+				
+				// Intercept localStorage.getItem to modify profile when it's read
+				const originalGetItem = Storage.prototype.getItem.bind(localStorage);
+				Storage.prototype.getItem = function(key) {
+					const value = originalGetItem(key);
+					
+					// If it's the "p" key, force username update before returning
+					if (key === 'p' && value) {
+						console.log('[Intercept] Caught localStorage.getItem for key "p"!');
+						const updated = updateProfileUsername(value);
+						if (updated !== value) {
+							// Save the updated version
+							originalSetItem(key, updated);
+							console.log('[Intercept] Profile updated and returned modified version!');
+							return updated;
+						}
+					}
+					return value;
+				};
+				
+				// Intercept localStorage.setItem to catch when "p" key is created/updated
+				const originalSetItem = Storage.prototype.setItem.bind(localStorage);
+				Storage.prototype.setItem = function(key, value) {
 					// Call original first
 					originalSetItem(key, value);
 					
 					// If it's the "p" key, force username update
 					if (key === 'p') {
 						console.log('[Intercept] Caught localStorage.setItem for key "p"!');
-						const username = forcedUsername || generateUsername();
-						if (username) {
-							try {
-								console.log('[Intercept] Forcing username update...');
-								const decompressedData = decompressGzipSync(value);
-								const profile = JSON.parse(decompressedData);
-								console.log('[Intercept] Current username:', profile.username);
-								profile.username = username;
-								console.log('[Intercept] Setting username to:', profile.username);
-								const newData = compressGzipSync(JSON.stringify(profile));
-								originalSetItem(key, newData);
-								console.log('[Intercept] Successfully updated profile username!');
-							} catch (e) {
-								console.error('[Intercept] Error updating profile:', e);
-							}
+						const updated = updateProfileUsername(value);
+						if (updated !== value) {
+							originalSetItem(key, updated);
+							console.log('[Intercept] Profile updated via setItem interceptor!');
 						}
 					}
 				};
