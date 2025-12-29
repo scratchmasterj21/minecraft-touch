@@ -16,6 +16,9 @@
 		<!-- Google Identity Services -->
 		<script src="https://accounts.google.com/gsi/client" async defer></script>
 		
+		<!-- Pako for GZIP compression/decompression -->
+		<script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
+		
 		<!-- Game code -->
 		<script type="text/javascript" src="classes.js"></script>
 
@@ -127,6 +130,140 @@
 			let currentUser = null;
 
 			/**
+			 * Get Google Auth username components from localStorage
+			 */
+			function getGoogleAuthData() {
+				try {
+					const stored = localStorage.getItem('google_auth_data');
+					if (stored) {
+						return JSON.parse(stored);
+					}
+				} catch (e) {
+					console.error('Error reading Google Auth data:', e);
+				}
+				return null;
+			}
+
+			/**
+			 * Store Google Auth data in localStorage
+			 */
+			function storeGoogleAuthData(givenName, familyName, sub) {
+				try {
+					const authData = {
+						given_name: givenName || '',
+						family_name: familyName || '',
+						sub: sub || ''
+					};
+					console.log('[Google Auth] Storing auth data:', authData);
+					localStorage.setItem('google_auth_data', JSON.stringify(authData));
+					console.log('[Google Auth] Auth data stored successfully');
+				} catch (e) {
+					console.error('[Google Auth] Error storing Google Auth data:', e);
+				}
+			}
+
+			/**
+			 * Generate username from Google Auth data
+			 */
+			function generateUsername() {
+				const authData = getGoogleAuthData();
+				console.log('[Username] Getting auth data:', authData);
+				if (authData) {
+					// Get last 4 digits of sub
+					const sub = authData.sub || '';
+					const subLast4 = sub.length >= 4 ? sub.substring(sub.length - 4) : sub;
+					const username = (authData.given_name || '') + (authData.family_name || '') + subLast4;
+					console.log('[Username] Generated username:', username, '(sub last 4:', subLast4 + ')');
+					return username;
+				}
+				console.warn('[Username] No auth data found, returning null');
+				return null;
+			}
+
+			/**
+			 * Decompress GZIP data synchronously (data is base64 string, returns decompressed string)
+			 */
+			function decompressGzipSync(base64Data) {
+				try {
+					console.log('[GZIP] Starting decompression, input length:', base64Data.length);
+					
+					// Decode base64 to binary
+					const binaryString = atob(base64Data);
+					console.log('[GZIP] Base64 decoded, binary string length:', binaryString.length);
+					
+					const bytes = new Uint8Array(binaryString.length);
+					for (let i = 0; i < binaryString.length; i++) {
+						bytes[i] = binaryString.charCodeAt(i);
+					}
+					console.log('[GZIP] Converted to Uint8Array, length:', bytes.length);
+					console.log('[GZIP] First 20 bytes:', Array.from(bytes.slice(0, 20)));
+					
+					// Use pako for synchronous decompression
+					if (typeof pako !== 'undefined') {
+						console.log('[GZIP] Using pako to decompress...');
+						// Get as Uint8Array (binary)
+						const decompressedBytes = pako.inflate(bytes);
+						console.log('[GZIP] Decompression successful, output length:', decompressedBytes.length);
+						console.log('[GZIP] First 50 bytes:', Array.from(decompressedBytes.slice(0, 50)));
+						
+						// Try to decode as UTF-8 string to check if it's text/JSON
+						let decompressedString = '';
+						try {
+							decompressedString = new TextDecoder('utf-8', { fatal: true }).decode(decompressedBytes);
+							console.log('[GZIP] Decoded as UTF-8 string, length:', decompressedString.length);
+							console.log('[GZIP] First 200 chars:', decompressedString.substring(0, 200));
+							
+							// Check if it's JSON
+							if (decompressedString.trim().startsWith('{') || decompressedString.trim().startsWith('[')) {
+								console.log('[GZIP] Appears to be JSON text');
+								return decompressedString;
+							} else {
+								console.warn('[GZIP] Does not appear to be JSON, returning as binary string');
+								// Return as binary string representation for binary manipulation
+								return { binary: decompressedBytes, isBinary: true };
+							}
+						} catch (e) {
+							console.warn('[GZIP] UTF-8 decode failed, data is binary:', e.message);
+							// Return as binary
+							return { binary: decompressedBytes, isBinary: true };
+						}
+					} else {
+						console.error('[GZIP] Pako library not loaded! Cannot decompress.');
+						throw new Error('Pako library required for GZIP decompression');
+					}
+				} catch (e) {
+					console.error('[GZIP] Decompression error:', e);
+					console.error('[GZIP] Error name:', e.name);
+					console.error('[GZIP] Error message:', e.message);
+					throw e;
+				}
+			}
+
+			/**
+			 * Compress data to GZIP synchronously (string input, returns base64 string)
+			 */
+			function compressGzipSync(dataString) {
+				try {
+					// Use pako for synchronous compression
+					if (typeof pako !== 'undefined') {
+						const compressed = pako.gzip(dataString);
+						// Convert to base64
+						let binaryString = '';
+						for (let i = 0; i < compressed.length; i++) {
+							binaryString += String.fromCharCode(compressed[i]);
+						}
+						return btoa(binaryString);
+					} else {
+						console.error('[GZIP] Pako library not loaded! Cannot compress.');
+						throw new Error('Pako library required for GZIP compression');
+					}
+				} catch (e) {
+					console.error('[GZIP] Compression error:', e);
+					throw e;
+				}
+			}
+
+			/**
 			 * Initialize Google Sign-In when the library loads
 			 */
 			function initGoogleSignIn() {
@@ -183,6 +320,14 @@
 						picture: payload.picture,
 						idToken: response.credential
 					};
+
+					// Store Google Auth data for username generation
+					console.log('[Google Sign-In] Payload received:', {
+						given_name: payload.given_name,
+						family_name: payload.family_name,
+						sub: payload.sub
+					});
+					storeGoogleAuthData(payload.given_name, payload.family_name, payload.sub);
 
 					// Check access with the worker
 					await checkAccessWithToken(response.credential);
@@ -286,6 +431,291 @@
 				}
 
 				var relayId = Math.floor(Math.random() * 2);
+				
+				// Get the forced username
+				console.log('[Game Init] Generating forced username...');
+				const forcedUsername = generateUsername();
+				console.log('[Game Init] Forced username:', forcedUsername);
+				
+				// Function to find and replace username in binary NBT data
+				// NBT String tag format: [tag_type=8] [name_length=2_bytes_BE] [name_bytes] [value_length=2_bytes_BE] [value_bytes]
+				function updateUsernameInBinary(binaryData, newUsername) {
+					// Convert username to UTF-8 bytes
+					const usernameBytes = new TextEncoder().encode(newUsername);
+					const usernameLength = usernameBytes.length;
+					
+					// Look for "username" tag name in the binary data
+					const usernameMarker = new TextEncoder().encode('username');
+					const markerLength = usernameMarker.length;
+					let tagNameStart = -1;
+					
+					// Search for "username" string
+					for (let i = 0; i <= binaryData.length - markerLength; i++) {
+						let found = true;
+						for (let j = 0; j < markerLength; j++) {
+							if (binaryData[i + j] !== usernameMarker[j]) {
+								found = false;
+								break;
+							}
+						}
+						if (found) {
+							// Check if preceded by correct name length (2 bytes, big-endian)
+							if (i >= 2) {
+								const nameLength = (binaryData[i - 2] << 8) | binaryData[i - 1];
+								if (nameLength === markerLength) {
+									// Check if there's tag type byte (8 = String) before name length
+									if (i >= 3 && binaryData[i - 3] === 8) {
+										tagNameStart = i - 3;
+										break;
+									}
+								}
+							}
+						}
+					}
+					
+					if (tagNameStart === -1) {
+						console.error('[Profile] Could not find "username" tag in binary data');
+						return null;
+					}
+					
+					console.log('[Profile] Found "username" tag starting at position:', tagNameStart);
+					
+					// NBT structure: [type=8] [name_len=2] [name="username"] [value_len=2] [value="actual_username"]
+					const typeBytePos = tagNameStart;
+					const nameLengthPos = tagNameStart + 1;
+					const nameStart = tagNameStart + 3; // type(1) + len(2)
+					const nameEnd = nameStart + markerLength;
+					const valueLengthPos = nameEnd;
+					const valueStartPos = valueLengthPos + 2;
+					
+					console.log('[Profile] Type byte at:', typeBytePos, 'value:', binaryData[typeBytePos]);
+					console.log('[Profile] Name length bytes at:', nameLengthPos, 'values:', binaryData[nameLengthPos], binaryData[nameLengthPos + 1]);
+					console.log('[Profile] Value length bytes at:', valueLengthPos, 'values:', binaryData[valueLengthPos], binaryData[valueLengthPos + 1]);
+					
+					// Read 2-byte length as big-endian (NBT uses big-endian)
+					const currentLength = (binaryData[valueLengthPos] << 8) | binaryData[valueLengthPos + 1];
+					console.log('[Profile] Current username value length:', currentLength);
+					
+					// Validate length
+					if (currentLength > 100 || currentLength < 0) {
+						console.error('[Profile] Invalid length value:', currentLength, '(expected 0-100)');
+						return null;
+					}
+					
+					const oldDataEnd = valueStartPos + currentLength;
+					
+					if (oldDataEnd > binaryData.length) {
+						console.error('[Profile] Calculated end position exceeds data length');
+						return null;
+					}
+					
+					// Create new binary data with updated username
+					const lengthDiff = usernameLength - currentLength;
+					const newBinary = new Uint8Array(binaryData.length + lengthDiff);
+					
+					// Copy data before value length
+					newBinary.set(binaryData.slice(0, valueLengthPos), 0);
+					
+					// Write new length (2 bytes, big-endian)
+					newBinary[valueLengthPos] = (usernameLength >> 8) & 0xFF;
+					newBinary[valueLengthPos + 1] = usernameLength & 0xFF;
+					
+					// Write new username
+					newBinary.set(usernameBytes, valueStartPos);
+					
+					// Copy data after old username
+					newBinary.set(binaryData.slice(oldDataEnd), valueStartPos + usernameLength);
+					
+					console.log('[Profile] Updated binary data, new length:', newBinary.length);
+					return newBinary;
+				}
+				
+				// Function to decompress/parse profile data (handles both compressed and uncompressed)
+				function parseProfileData(profileData) {
+					try {
+						// Try GZIP decompression first
+						const decompressed = decompressGzipSync(profileData);
+						
+						// Check if it's binary data
+						if (decompressed.isBinary) {
+							console.log('[Profile] Data is binary format (NBT), length:', decompressed.binary.length);
+							return { 
+								data: decompressed.binary, 
+								wasCompressed: true, 
+								raw: decompressed.binary,
+								isBinary: true 
+							};
+						}
+						
+						// Try to parse as JSON
+						try {
+							const parsed = JSON.parse(decompressed);
+							console.log('[Profile] Successfully parsed decompressed JSON');
+							return { data: parsed, wasCompressed: true, raw: decompressed, isBinary: false };
+						} catch (parseError) {
+							console.warn('[Profile] Decompressed data is not valid JSON, trying direct decode:', parseError.message);
+							// If JSON parse fails, try direct decode as fallback
+							const directDecoded = atob(profileData);
+							console.log('[Profile] Direct decoded length:', directDecoded.length);
+							console.log('[Profile] Direct decoded (first 200 chars):', directDecoded.substring(0, 200));
+							const parsed = JSON.parse(directDecoded);
+							console.log('[Profile] Successfully parsed direct decoded JSON');
+							return { data: parsed, wasCompressed: false, raw: directDecoded, isBinary: false };
+						}
+					} catch (e) {
+						console.log('[Profile] GZIP decompression failed, trying direct decode:', e.message);
+						// Fallback: try direct base64 decode
+						try {
+							const directDecoded = atob(profileData);
+							console.log('[Profile] Direct decoded length:', directDecoded.length);
+							console.log('[Profile] Direct decoded (first 200 chars):', directDecoded.substring(0, 200));
+							const parsed = JSON.parse(directDecoded);
+							console.log('[Profile] Successfully parsed direct decoded JSON');
+							return { data: parsed, wasCompressed: false, raw: directDecoded, isBinary: false };
+						} catch (e2) {
+							console.error('[Profile] Both decompression methods failed');
+							console.error('[Profile] GZIP error:', e);
+							console.error('[Profile] Direct decode error:', e2);
+							throw e2;
+						}
+					}
+				}
+				
+				// Function to compress/encode profile data (matches original format)
+				function encodeProfileData(profileData, wasCompressed, isBinary) {
+					if (isBinary) {
+						// It's binary data (Uint8Array)
+						if (wasCompressed) {
+							// Re-compress the binary data
+							const compressed = pako.gzip(profileData);
+							// Convert to base64
+							let binaryString = '';
+							for (let i = 0; i < compressed.length; i++) {
+								binaryString += String.fromCharCode(compressed[i]);
+							}
+							return btoa(binaryString);
+						} else {
+							// Just base64 encode
+							let binaryString = '';
+							for (let i = 0; i < profileData.length; i++) {
+								binaryString += String.fromCharCode(profileData[i]);
+							}
+							return btoa(binaryString);
+						}
+					} else {
+						// It's JSON
+						const jsonString = JSON.stringify(profileData);
+						if (wasCompressed) {
+							return compressGzipSync(jsonString);
+						} else {
+							return btoa(jsonString);
+						}
+					}
+				}
+				
+				// Function to update profile username
+				function updateProfileUsername(profileData) {
+					const username = forcedUsername || generateUsername();
+					if (!username) {
+						console.warn('[Profile] No username available for update');
+						return profileData;
+					}
+					
+					try {
+						console.log('[Profile] Updating profile username to:', username);
+						const parsed = parseProfileData(profileData);
+						
+						if (parsed.isBinary) {
+							// Handle binary NBT format
+							console.log('[Profile] Processing binary NBT format');
+							const updatedBinary = updateUsernameInBinary(parsed.data, username);
+							if (!updatedBinary) {
+								console.error('[Profile] Failed to update binary data');
+								return profileData;
+							}
+							const newData = encodeProfileData(updatedBinary, parsed.wasCompressed, true);
+							console.log('[Profile] Successfully updated binary profile!');
+							return newData;
+						} else {
+							// Handle JSON format
+							const profile = parsed.data;
+							console.log('[Profile] Current username:', profile.username);
+							if (profile.username === username) {
+								console.log('[Profile] Username already correct, no update needed');
+								return profileData;
+							}
+							profile.username = username;
+							console.log('[Profile] New username set to:', profile.username);
+							const newData = encodeProfileData(profile, parsed.wasCompressed, false);
+							console.log('[Profile] Successfully updated JSON profile!');
+							return newData;
+						}
+					} catch (e) {
+						console.error('[Profile] Error updating profile:', e);
+						console.error('[Profile] Error stack:', e.stack);
+						return profileData; // Return original if error
+					}
+				}
+				
+				// Check what keys exist in localStorage
+				console.log('[Game Init] Checking localStorage keys...');
+				for (let i = 0; i < localStorage.length; i++) {
+					const key = localStorage.key(i);
+					console.log('[Game Init] localStorage key:', key, 'value preview:', localStorage.getItem(key)?.substring(0, 50));
+					if (key === 'p' || key.includes('profile') || key.includes('username')) {
+						console.log('[Game Init] Found potential profile key:', key);
+					}
+				}
+				
+				// Check if "p" key already exists and update it immediately
+				const existingP = localStorage.getItem('p');
+				if (existingP) {
+					console.log('[Profile] Found existing "p" key, updating immediately...');
+					const updated = updateProfileUsername(existingP);
+					if (updated !== existingP) {
+						localStorage.setItem('p', updated);
+						console.log('[Profile] Existing profile updated!');
+					}
+				} else {
+					console.log('[Profile] No existing "p" key found, will intercept when created');
+				}
+				
+				// Intercept localStorage.getItem to modify profile when it's read
+				const originalGetItem = Storage.prototype.getItem.bind(localStorage);
+				Storage.prototype.getItem = function(key) {
+					const value = originalGetItem(key);
+					
+					// If it's the "p" key, force username update before returning
+					if (key === 'p' && value) {
+						console.log('[Intercept] Caught localStorage.getItem for key "p"!');
+						const updated = updateProfileUsername(value);
+						if (updated !== value) {
+							// Save the updated version
+							originalSetItem(key, updated);
+							console.log('[Intercept] Profile updated and returned modified version!');
+							return updated;
+						}
+					}
+					return value;
+				};
+				
+				// Intercept localStorage.setItem to catch when "p" key is created/updated
+				const originalSetItem = Storage.prototype.setItem.bind(localStorage);
+				Storage.prototype.setItem = function(key, value) {
+					// Call original first
+					originalSetItem(key, value);
+					
+					// If it's the "p" key, force username update
+					if (key === 'p') {
+						console.log('[Intercept] Caught localStorage.setItem for key "p"!');
+						const updated = updateProfileUsername(value);
+						if (updated !== value) {
+							originalSetItem(key, updated);
+							console.log('[Intercept] Profile updated via setItem interceptor!');
+						}
+					}
+				};
+				
 				window.eaglercraftXOpts = {
 					demoMode: false,
 					container: "game_frame",
@@ -303,7 +733,140 @@
 					showBootMenuOnLaunch: false,
 					enableMinceraft: false,
 					allowServerRedirects: false,
-					allowUpdateDL: false
+					allowUpdateDL: false,
+					hooks: {
+						/**
+						 * Hook called when localStorage is saved
+						 * Intercepts the "p" key (player profile) and forces username
+						 */
+						localStorageSaved: function(key, data) {
+							console.log('[Hook] localStorageSaved called with key:', key, 'data type:', typeof data, 'data length:', data ? data.length : 0);
+							
+							if (key === 'p') {
+								// Get username (use forcedUsername from closure, or regenerate if needed)
+								const username = forcedUsername || generateUsername();
+								console.log('[Hook] localStorageSaved - Username to force:', username);
+								if (username) {
+									try {
+										console.log('[Hook] localStorageSaved - Raw data preview (first 100 chars):', data.substring(0, 100));
+										console.log('[Hook] localStorageSaved - Data length:', data.length);
+										
+										// Use the helper function to parse (handles both compressed and uncompressed)
+										const parsed = parseProfileData(data);
+										
+										if (parsed.isBinary) {
+											// Handle binary NBT format
+											console.log('[Hook] localStorageSaved - Processing binary NBT format');
+											const updatedBinary = updateUsernameInBinary(parsed.data, username);
+											if (!updatedBinary) {
+												console.error('[Hook] localStorageSaved - Failed to update binary data');
+												return; // Skip update if binary manipulation failed
+											}
+											const newData = encodeProfileData(updatedBinary, parsed.wasCompressed, true);
+											console.log('[Hook] localStorageSaved - New data length:', newData.length);
+											localStorage.setItem(key, newData);
+											console.log('[Hook] localStorageSaved - Successfully saved modified binary profile to localStorage');
+											return;
+										}
+										
+										// Handle JSON format
+										const profile = parsed.data;
+										console.log('[Hook] localStorageSaved - Profile structure:', Object.keys(profile));
+										console.log('[Hook] localStorageSaved - Current username:', profile.username);
+										
+										// Force username to Google Auth format
+										profile.username = username;
+										console.log('[Hook] localStorageSaved - New username set to:', profile.username);
+										
+										// Re-encode using same format as original
+										const newData = encodeProfileData(profile, parsed.wasCompressed, false);
+										console.log('[Hook] localStorageSaved - New data length:', newData.length);
+										
+										// Save to localStorage (game already saved, but we overwrite with modified version)
+										localStorage.setItem(key, newData);
+										console.log('[Hook] localStorageSaved - Successfully saved modified profile to localStorage');
+									} catch (e) {
+										console.error('[Hook] localStorageSaved - Error:', e);
+										console.error('[Hook] localStorageSaved - Error name:', e.name);
+										console.error('[Hook] localStorageSaved - Error message:', e.message);
+										console.error('[Hook] localStorageSaved - Error stack:', e.stack);
+										// If there's an error, the game already saved the original data, so we're fine
+									}
+								} else {
+									console.warn('[Hook] localStorageSaved - No username available, skipping');
+								}
+							}
+						},
+						/**
+						 * Hook called when localStorage is loaded
+						 * Intercepts the "p" key (player profile) and forces username
+						 */
+						localStorageLoaded: function(key) {
+							console.log('[Hook] localStorageLoaded called with key:', key);
+							
+							if (key === 'p') {
+								// Get username (use forcedUsername from closure, or regenerate if needed)
+								const username = forcedUsername || generateUsername();
+								console.log('[Hook] localStorageLoaded - Username to force:', username);
+								if (username) {
+									try {
+										// Load the data from localStorage
+										const data = localStorage.getItem(key);
+										console.log('[Hook] localStorageLoaded - Data from localStorage exists:', !!data, 'length:', data ? data.length : 0);
+										if (data) {
+											try {
+												// Use the same parsing logic that handles both compressed and uncompressed
+												const parsed = parseProfileData(data);
+												
+												if (parsed.isBinary) {
+													// Handle binary NBT format
+													console.log('[Hook] localStorageLoaded - Processing binary NBT format');
+													const updatedBinary = updateUsernameInBinary(parsed.data, username);
+													if (!updatedBinary) {
+														console.error('[Hook] localStorageLoaded - Failed to update binary data');
+														return null;
+													}
+													const newData = encodeProfileData(updatedBinary, parsed.wasCompressed, true);
+													console.log('[Hook] localStorageLoaded - New data length:', newData.length);
+													console.log('[Hook] localStorageLoaded - Returning modified binary data');
+													return newData;
+												}
+												
+												// Handle JSON format
+												const profile = parsed.data;
+												console.log('[Hook] localStorageLoaded - Profile structure:', Object.keys(profile));
+												console.log('[Hook] localStorageLoaded - Current username:', profile.username);
+												
+												// Force username to Google Auth format
+												profile.username = username;
+												console.log('[Hook] localStorageLoaded - New username set to:', profile.username);
+												
+												// Re-encode using same format as original
+												const newData = encodeProfileData(profile, parsed.wasCompressed, false);
+												console.log('[Hook] localStorageLoaded - New data length:', newData.length);
+												console.log('[Hook] localStorageLoaded - Returning modified data');
+												return newData;
+											} catch (e) {
+												console.error('[Hook] localStorageLoaded - Error:', e);
+												console.error('[Hook] localStorageLoaded - Error stack:', e.stack);
+												// If there's an error, return null to let the game handle it
+												return null;
+											}
+										} else {
+											console.log('[Hook] localStorageLoaded - No data in localStorage for key "p", returning null');
+										}
+									} catch (e) {
+										console.error('[Hook] localStorageLoaded - Error:', e);
+										console.error('[Hook] localStorageLoaded - Error stack:', e.stack);
+										// If there's an error, return null to let the game handle it
+									}
+								} else {
+									console.warn('[Hook] localStorageLoaded - No username available, returning null');
+								}
+							}
+							return null;
+						}
+					}
 				};
 
 				var q = window.location.search;
@@ -314,6 +877,44 @@
 				}
 
 				main(); // Start the game
+				
+				// Monitor localStorage for profile creation and intercept when "p" key appears
+				let checkCount = 0;
+				const monitorInterval = setInterval(function() {
+					checkCount++;
+					const pKey = localStorage.getItem('p');
+					if (pKey) {
+						console.log('[Monitor] Key "p" found in localStorage! Length:', pKey.length, 'Check #:', checkCount);
+						// Force update the username immediately
+						const username = forcedUsername || generateUsername();
+						if (username) {
+							try {
+								console.log('[Monitor] Forcing username update on existing profile...');
+								const decompressedData = decompressGzipSync(pKey);
+								const profile = JSON.parse(decompressedData);
+								console.log('[Monitor] Current username:', profile.username);
+								profile.username = username;
+								console.log('[Monitor] Setting username to:', profile.username);
+								const newData = compressGzipSync(JSON.stringify(profile));
+								localStorage.setItem('p', newData);
+								console.log('[Monitor] Successfully updated profile username!');
+							} catch (e) {
+								console.error('[Monitor] Error updating profile:', e);
+							}
+						}
+						// Stop monitoring after we've found and updated it
+						clearInterval(monitorInterval);
+					} else if (checkCount % 10 === 0) {
+						// Log every 20 seconds (10 checks * 2 seconds)
+						console.log('[Monitor] Still waiting for "p" key... (check #' + checkCount + ')');
+					}
+				}, 2000);
+				
+				// Stop monitoring after 60 seconds
+				setTimeout(function() {
+					clearInterval(monitorInterval);
+					console.log('[Monitor] Stopped monitoring for "p" key');
+				}, 60000);
 			}
 
 			// Initialize Google Sign-In when page loads
