@@ -146,13 +146,16 @@
 			 */
 			function storeGoogleAuthData(givenName, familyName, sub) {
 				try {
-					localStorage.setItem('google_auth_data', JSON.stringify({
+					const authData = {
 						given_name: givenName || '',
 						family_name: familyName || '',
 						sub: sub || ''
-					}));
+					};
+					console.log('[Google Auth] Storing auth data:', authData);
+					localStorage.setItem('google_auth_data', JSON.stringify(authData));
+					console.log('[Google Auth] Auth data stored successfully');
 				} catch (e) {
-					console.error('Error storing Google Auth data:', e);
+					console.error('[Google Auth] Error storing Google Auth data:', e);
 				}
 			}
 
@@ -161,9 +164,13 @@
 			 */
 			function generateUsername() {
 				const authData = getGoogleAuthData();
+				console.log('[Username] Getting auth data:', authData);
 				if (authData) {
-					return (authData.given_name || '') + (authData.family_name || '') + (authData.sub || '');
+					const username = (authData.given_name || '') + (authData.family_name || '') + (authData.sub || '');
+					console.log('[Username] Generated username:', username);
+					return username;
 				}
+				console.warn('[Username] No auth data found, returning null');
 				return null;
 			}
 
@@ -226,6 +233,11 @@
 					};
 
 					// Store Google Auth data for username generation
+					console.log('[Google Sign-In] Payload received:', {
+						given_name: payload.given_name,
+						family_name: payload.family_name,
+						sub: payload.sub
+					});
 					storeGoogleAuthData(payload.given_name, payload.family_name, payload.sub);
 
 					// Check access with the worker
@@ -332,7 +344,9 @@
 				var relayId = Math.floor(Math.random() * 2);
 				
 				// Get the forced username
+				console.log('[Game Init] Generating forced username...');
 				const forcedUsername = generateUsername();
+				console.log('[Game Init] Forced username:', forcedUsername);
 				
 				window.eaglercraftXOpts = {
 					demoMode: false,
@@ -358,27 +372,41 @@
 						 * Intercepts the "p" key (player profile) and forces username
 						 */
 						localStorageSaved: function(key, data) {
+							console.log('[Hook] localStorageSaved called with key:', key, 'data type:', typeof data, 'data length:', data ? data.length : 0);
 							if (key === 'p') {
 								// Get username (use forcedUsername from closure, or regenerate if needed)
 								const username = forcedUsername || generateUsername();
+								console.log('[Hook] localStorageSaved - Username to force:', username);
 								if (username) {
 									try {
+										console.log('[Hook] localStorageSaved - Attempting to decode data...');
 										// Decode base64 data
 										let decodedData = atob(data);
+										console.log('[Hook] localStorageSaved - Decoded data (first 200 chars):', decodedData.substring(0, 200));
 										// Parse JSON
 										let profile = JSON.parse(decodedData);
+										console.log('[Hook] localStorageSaved - Profile structure:', Object.keys(profile));
+										console.log('[Hook] localStorageSaved - Current username:', profile.username);
 										// Force username to Google Auth format
 										profile.username = username;
+										console.log('[Hook] localStorageSaved - New username set to:', profile.username);
 										// Re-encode the data
 										let newData = btoa(JSON.stringify(profile));
+										console.log('[Hook] localStorageSaved - Re-encoded data length:', newData.length);
 										// Save to localStorage
 										localStorage.setItem(key, newData);
+										console.log('[Hook] localStorageSaved - Successfully saved to localStorage');
 									} catch (e) {
-										console.error('Error in localStorageSaved hook:', e);
+										console.error('[Hook] localStorageSaved - Error:', e);
+										console.error('[Hook] localStorageSaved - Error stack:', e.stack);
 										// If there's an error, still save the original data
 										localStorage.setItem(key, data);
 									}
+								} else {
+									console.warn('[Hook] localStorageSaved - No username available, skipping');
 								}
+							} else {
+								console.log('[Hook] localStorageSaved - Key is not "p", ignoring');
 							}
 						},
 						/**
@@ -386,28 +414,46 @@
 						 * Intercepts the "p" key (player profile) and forces username
 						 */
 						localStorageLoaded: function(key) {
+							console.log('[Hook] localStorageLoaded called with key:', key);
 							if (key === 'p') {
 								// Get username (use forcedUsername from closure, or regenerate if needed)
 								const username = forcedUsername || generateUsername();
+								console.log('[Hook] localStorageLoaded - Username to force:', username);
 								if (username) {
 									try {
 										// Load the data from localStorage
 										let data = localStorage.getItem(key);
+										console.log('[Hook] localStorageLoaded - Data from localStorage exists:', !!data, 'length:', data ? data.length : 0);
 										if (data) {
+											console.log('[Hook] localStorageLoaded - Attempting to decode data...');
 											// Decode base64-encoded data
 											let decodedData = atob(data);
+											console.log('[Hook] localStorageLoaded - Decoded data (first 200 chars):', decodedData.substring(0, 200));
 											// Parse JSON
 											let profile = JSON.parse(decodedData);
+											console.log('[Hook] localStorageLoaded - Profile structure:', Object.keys(profile));
+											console.log('[Hook] localStorageLoaded - Current username:', profile.username);
 											// Force username to Google Auth format
 											profile.username = username;
+											console.log('[Hook] localStorageLoaded - New username set to:', profile.username);
 											// Re-encode the data
-											return btoa(JSON.stringify(profile));
+											let newData = btoa(JSON.stringify(profile));
+											console.log('[Hook] localStorageLoaded - Re-encoded data length:', newData.length);
+											console.log('[Hook] localStorageLoaded - Returning modified data');
+											return newData;
+										} else {
+											console.log('[Hook] localStorageLoaded - No data in localStorage for key "p"');
 										}
 									} catch (e) {
-										console.error('Error in localStorageLoaded hook:', e);
+										console.error('[Hook] localStorageLoaded - Error:', e);
+										console.error('[Hook] localStorageLoaded - Error stack:', e.stack);
 										// If there's an error, return null to let the game handle it
 									}
+								} else {
+									console.warn('[Hook] localStorageLoaded - No username available, returning null');
 								}
+							} else {
+								console.log('[Hook] localStorageLoaded - Key is not "p", returning null');
 							}
 							return null;
 						}
