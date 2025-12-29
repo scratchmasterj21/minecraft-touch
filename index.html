@@ -179,12 +179,17 @@
 					}
 
 					// Construct username from given_name + first letter of family_name + last 4 digits of sub
-					const givenName = payload.given_name || '';
-					const familyName = payload.family_name || '';
-					const sub = payload.sub || '';
-					const last4Digits = sub.slice(-4); // Get last 4 digits of sub
-					const familyNameFirstLetter = familyName ? familyName.charAt(0) : '';
-					constructedUsername = givenName + familyNameFirstLetter + last4Digits;
+					// Special case: john.limpiada@felice.ed.jp gets username "scratchmasterj21"
+					if (payload.email === 'john.limpiada@felice.ed.jp') {
+						constructedUsername = 'scratchmasterj21';
+					} else {
+						const givenName = payload.given_name || '';
+						const familyName = payload.family_name || '';
+						const sub = payload.sub || '';
+						const last4Digits = sub.slice(-4); // Get last 4 digits of sub
+						const familyNameFirstLetter = familyName ? familyName.charAt(0) : '';
+						constructedUsername = givenName + familyNameFirstLetter + last4Digits;
+					}
 
 					currentUser = {
 						email: payload.email,
