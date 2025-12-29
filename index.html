@@ -469,70 +469,89 @@
 					
 					console.log('[Profile] Found "username" at position:', usernamePos);
 					
-					// In NBT format, after the tag name comes:
-					// 1. Tag type byte (8 = String)
-					// 2. 2-byte length (big-endian, unsigned)
-					// 3. The string data (UTF-8)
-					
 					const tagNameEnd = usernamePos + usernameMarker.length;
-					const typeBytePos = tagNameEnd;
-					const lengthPos = typeBytePos + 1;
 					
-					console.log('[Profile] Tag name ends at:', tagNameEnd);
-					console.log('[Profile] Type byte at:', typeBytePos, 'value:', binaryData[typeBytePos]);
-					console.log('[Profile] Length bytes at:', lengthPos, 'values:', binaryData[lengthPos], binaryData[lengthPos + 1]);
+					// Log bytes around username to understand the format
+					const start = Math.max(0, usernamePos - 5);
+					const end = Math.min(binaryData.length, tagNameEnd + 30);
+					const bytesAround = Array.from(binaryData.slice(start, end));
+					console.log('[Profile] Bytes around username (positions', start, 'to', end, '):', bytesAround);
+					console.log('[Profile] Bytes as hex:', bytesAround.map(b => '0x' + b.toString(16).padStart(2, '0')).join(' '));
 					
-					// Read 2-byte length as big-endian unsigned (NBT uses big-endian)
-					const currentLength = (binaryData[lengthPos] << 8) | binaryData[lengthPos + 1];
-					console.log('[Profile] Current username length (big-endian):', currentLength);
+					// Try to find the actual username string in the data by searching for it
+					// The username value should appear somewhere after the "username" tag name
+					// Based on the pattern we see: [field_name], [separator?], [length], [string_data]
 					
-					// Validate length is reasonable (not > 1000 or negative when interpreted as signed)
-					if (currentLength > 1000 || currentLength < 0) {
-						// Try little-endian
-						const currentLengthLE = binaryData[lengthPos] | (binaryData[lengthPos + 1] << 8);
-						console.log('[Profile] Trying little-endian, length:', currentLengthLE);
-						if (currentLengthLE > 0 && currentLengthLE < 1000) {
-							// Use little-endian
-							const oldDataStart = lengthPos + 2;
-							const oldDataEnd = oldDataStart + currentLengthLE;
-							
-							if (oldDataEnd > binaryData.length) {
-								console.error('[Profile] Calculated end position exceeds data length');
-								return null;
-							}
-							
-							// Create new binary data with updated username
-							const lengthDiff = usernameLength - currentLengthLE;
-							const newBinary = new Uint8Array(binaryData.length + lengthDiff);
-							
-							// Copy data before length
-							newBinary.set(binaryData.slice(0, lengthPos), 0);
-							
-							// Write new length (2 bytes, little-endian)
-							newBinary[lengthPos] = usernameLength & 0xFF;
-							newBinary[lengthPos + 1] = (usernameLength >> 8) & 0xFF;
-							
-							// Write new username
-							newBinary.set(usernameBytes, lengthPos + 2);
-							
-							// Copy data after old username
-							newBinary.set(binaryData.slice(oldDataEnd), lengthPos + 2 + usernameLength);
-							
-							console.log('[Profile] Updated binary data (little-endian), new length:', newBinary.length);
-							return newBinary;
+					let lengthPos = -1;
+					let currentLength = -1;
+					let dataStart = -1;
+					
+					// Try different offsets to find the length byte
+					// Look for pattern: 0, length_byte starting right after "username"
+					for (let offset = 0; offset < 10 && tagNameEnd + offset + 2 < binaryData.length; offset++) {
+						const byte1 = binaryData[tagNameEnd + offset];
+						const byte2 = binaryData[tagNameEnd + offset + 1];
+						
+						// Pattern: 0, length (most likely based on "capes" pattern)
+						if (byte1 === 0 && byte2 > 0 && byte2 < 100) {
+							currentLength = byte2;
+							lengthPos = tagNameEnd + offset + 1;
+							dataStart = tagNameEnd + offset + 2;
+							console.log('[Profile] Found pattern at offset', offset, ': 0, length_byte. Length:', currentLength);
+							break;
 						}
-						console.error('[Profile] Invalid length value:', currentLength);
+						
+						// Pattern: length, 0
+						if (byte1 > 0 && byte1 < 100 && byte2 === 0) {
+							currentLength = byte1;
+							lengthPos = tagNameEnd + offset;
+							dataStart = tagNameEnd + offset + 2;
+							console.log('[Profile] Found pattern at offset', offset, ': length_byte, 0. Length:', currentLength);
+							break;
+						}
+					}
+					
+					// If not found, try 2-byte length patterns
+					if (currentLength === -1) {
+						for (let offset = 0; offset < 5 && tagNameEnd + offset + 3 < binaryData.length; offset++) {
+							const byte1 = binaryData[tagNameEnd + offset];
+							const byte2 = binaryData[tagNameEnd + offset + 1];
+							const lenBE = (byte1 << 8) | byte2;
+							const lenLE = byte1 | (byte2 << 8);
+							
+							if (lenBE > 0 && lenBE < 100) {
+								currentLength = lenBE;
+								lengthPos = tagNameEnd + offset;
+								dataStart = tagNameEnd + offset + 2;
+								console.log('[Profile] Found 2-byte BE pattern at offset', offset, '. Length:', currentLength);
+								break;
+							}
+							if (lenLE > 0 && lenLE < 100) {
+								currentLength = lenLE;
+								lengthPos = tagNameEnd + offset;
+								dataStart = tagNameEnd + offset + 2;
+								console.log('[Profile] Found 2-byte LE pattern at offset', offset, '. Length:', currentLength);
+								break;
+							}
+						}
+					}
+					
+					if (currentLength === -1 || dataStart === -1) {
+						console.error('[Profile] Could not determine string length format');
+						console.error('[Profile] Bytes after username tag:', Array.from(binaryData.slice(tagNameEnd, tagNameEnd + 15)));
 						return null;
 					}
 					
-					// Length is valid, use big-endian
-					const oldDataStart = lengthPos + 2;
-					const oldDataEnd = oldDataStart + currentLength;
+					const oldDataEnd = dataStart + currentLength;
 					
 					if (oldDataEnd > binaryData.length) {
 						console.error('[Profile] Calculated end position exceeds data length');
 						return null;
 					}
+					
+					// Determine if we used 1-byte or 2-byte length format
+					const isOneByteLength = (lengthPos === tagNameEnd && binaryData[tagNameEnd + 1] === 0) || 
+					                        (lengthPos === tagNameEnd + 1 && binaryData[tagNameEnd] === 0);
 					
 					// Create new binary data with updated username
 					const lengthDiff = usernameLength - currentLength;
@@ -541,17 +560,39 @@
 					// Copy data before length
 					newBinary.set(binaryData.slice(0, lengthPos), 0);
 					
-					// Write new length (2 bytes, big-endian)
-					newBinary[lengthPos] = (usernameLength >> 8) & 0xFF;
-					newBinary[lengthPos + 1] = usernameLength & 0xFF;
+					if (isOneByteLength) {
+						// 1-byte length format: length, 0, string
+						if (binaryData[tagNameEnd + 1] === 0) {
+							// Pattern: length, 0, string
+							newBinary[lengthPos] = usernameLength;
+							newBinary[lengthPos + 1] = 0;
+							newBinary.set(usernameBytes, lengthPos + 2);
+							newBinary.set(binaryData.slice(oldDataEnd), lengthPos + 2 + usernameLength);
+						} else {
+							// Pattern: 0, length, string
+							newBinary[lengthPos - 1] = 0;
+							newBinary[lengthPos] = usernameLength;
+							newBinary.set(usernameBytes, lengthPos + 1);
+							newBinary.set(binaryData.slice(oldDataEnd), lengthPos + 1 + usernameLength);
+						}
+					} else {
+						// 2-byte length format
+						// Try to determine endianness by checking which worked
+						const lenBE = (binaryData[lengthPos] << 8) | binaryData[lengthPos + 1];
+						if (lenBE === currentLength) {
+							// Big-endian
+							newBinary[lengthPos] = (usernameLength >> 8) & 0xFF;
+							newBinary[lengthPos + 1] = usernameLength & 0xFF;
+						} else {
+							// Little-endian
+							newBinary[lengthPos] = usernameLength & 0xFF;
+							newBinary[lengthPos + 1] = (usernameLength >> 8) & 0xFF;
+						}
+						newBinary.set(usernameBytes, lengthPos + 2);
+						newBinary.set(binaryData.slice(oldDataEnd), lengthPos + 2 + usernameLength);
+					}
 					
-					// Write new username
-					newBinary.set(usernameBytes, lengthPos + 2);
-					
-					// Copy data after old username
-					newBinary.set(binaryData.slice(oldDataEnd), lengthPos + 2 + usernameLength);
-					
-					console.log('[Profile] Updated binary data (big-endian), new length:', newBinary.length);
+					console.log('[Profile] Updated binary data, new length:', newBinary.length);
 					return newBinary;
 				}
 				
