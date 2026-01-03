@@ -127,6 +127,7 @@
 			let currentUser = null;
 			let constructedUsername = null;
 			let currentIdToken = null;
+			let assetsChecksum = null;
 
 			/**
 			 * Initialize Google Sign-In when the library loads
@@ -229,6 +230,11 @@
 					if (result.username) {
 						constructedUsername = result.username;
 					}
+					
+					// Get assets checksum for cache versioning
+					if (result.assetsChecksum) {
+						assetsChecksum = result.assetsChecksum;
+					}
 
 					if (result.allowed) {
 						// Remove login overlay from DOM and prepare for game initialization
@@ -316,10 +322,17 @@
 
 				var relayId = Math.floor(Math.random() * 2);
 				
-				// Construct assets URI with authentication token
-				const assetsURI = currentIdToken 
-					? `${CONFIG.WORKER_URL}/assets2.epk?token=${encodeURIComponent(currentIdToken)}`
-					: "assets2.epk"; // Fallback if no token (shouldn't happen)
+				// Construct assets URI with authentication token and checksum for cache versioning
+				let assetsURI;
+				if (currentIdToken) {
+					const baseUrl = `${CONFIG.WORKER_URL}/assets2.epk?token=${encodeURIComponent(currentIdToken)}`;
+					// Append hash parameter if checksum is available (for cache versioning)
+					assetsURI = assetsChecksum 
+						? `${baseUrl}&hash=${encodeURIComponent(assetsChecksum)}`
+						: baseUrl;
+				} else {
+					assetsURI = "assets2.epk"; // Fallback if no token (shouldn't happen)
+				}
 				
 				window.eaglercraftXOpts = {
 					demoMode: false,
