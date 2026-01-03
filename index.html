@@ -126,6 +126,7 @@
 			let gameInitialized = false;
 			let currentUser = null;
 			let constructedUsername = null;
+			let currentIdToken = null;
 
 			/**
 			 * Initialize Google Sign-In when the library loads
@@ -202,6 +203,9 @@
 			 * Check access using Google ID token
 			 */
 			async function checkAccessWithToken(idToken) {
+				// Store token for use in assets loading
+				currentIdToken = idToken;
+				
 				try {
 					const response = await fetch(`${CONFIG.WORKER_URL}/check-access`, {
 						method: 'POST',
@@ -311,10 +315,16 @@
 				}
 
 				var relayId = Math.floor(Math.random() * 2);
+				
+				// Construct assets URI with authentication token
+				const assetsURI = currentIdToken 
+					? `${CONFIG.WORKER_URL}/assets3.epk?token=${encodeURIComponent(currentIdToken)}`
+					: "assets3.epk"; // Fallback if no token (shouldn't happen)
+				
 				window.eaglercraftXOpts = {
 					demoMode: false,
 					container: "game_frame",
-					assetsURI: "assets3.epk",
+					assetsURI: assetsURI,
 					localesURI: "lang/",
 					worldsDB: "worlds",
 					servers: [
