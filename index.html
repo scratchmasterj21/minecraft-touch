@@ -102,6 +102,23 @@
 				40% { content: '..'; }
 				60%, 100% { content: '...'; }
 			}
+			
+			/* Device blocking message styles */
+			.device-block-message {
+				color: #f87171;
+				background: rgba(248, 113, 113, 0.1);
+				border: 1px solid rgba(248, 113, 113, 0.3);
+				border-radius: 8px;
+				padding: 20px 30px;
+				margin-top: 20px;
+				font-size: 1rem;
+				line-height: 1.6;
+			}
+			
+			.device-block-icon {
+				font-size: 3rem;
+				margin-bottom: 20px;
+			}
 		</style>
 
 		<script>
@@ -128,6 +145,47 @@
 			let constructedUsername = null;
 			let currentIdToken = null;
 			let assetsChecksum = null;
+
+			/**
+			 * Detect if device is mobile, tablet, or iPad
+			 * Returns true if device should be blocked
+			 */
+			function isMobileDevice() {
+				const ua = navigator.userAgent.toLowerCase();
+				
+				// Check for mobile devices
+				const isMobile = /mobile|android|iphone|ipod|blackberry|iemobile|opera mini/i.test(ua);
+				
+				// Check for tablets (iPad, Android tablets, etc.)
+				const isTablet = /ipad|android(?!.*mobile)|tablet|kindle|playbook/i.test(ua);
+				
+				// Check for touch devices with small screens (optional - can be bypassed by resizing)
+				const isTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+				const isSmallScreen = window.innerWidth < 1024 || window.innerHeight < 768;
+				const isTouchDevice = isTouch && isSmallScreen;
+				
+				return isMobile || isTablet || isTouchDevice;
+			}
+
+			/**
+			 * Show device blocking message
+			 */
+			function showDeviceBlockMessage() {
+				const loginOverlay = document.getElementById('login-overlay');
+				const loginContainer = document.querySelector('.login-container');
+				
+				if (loginOverlay && loginContainer) {
+					loginContainer.innerHTML = `
+						<div class="device-block-icon">📱</div>
+						<h1 class="login-title">Device Not Supported</h1>
+						<div class="device-block-message">
+							<p><strong>This game requires a desktop or laptop computer.</strong></p>
+							<p>Mobile devices, tablets, and iPads are not supported due to performance limitations and may experience significant lag.</p>
+							<p>Please access this game from a desktop or laptop computer for the best experience.</p>
+						</div>
+					`;
+				}
+			}
 
 			/**
 			 * Initialize Google Sign-In when the library loads
@@ -372,8 +430,17 @@
 				main(); // Start the game
 			}
 
-			// Initialize Google Sign-In when page loads
-			window.addEventListener('load', initGoogleSignIn);
+			// Check for mobile devices and initialize on page load
+			window.addEventListener('load', function() {
+				// Check if device is mobile/tablet and block access
+				if (isMobileDevice()) {
+					showDeviceBlockMessage();
+					return; // Don't initialize Google Sign-In
+				}
+				
+				// Device is desktop/laptop, proceed with initialization
+				initGoogleSignIn();
+			});
 		</script>
 		<script>
 			window.onbeforeunload = null;
