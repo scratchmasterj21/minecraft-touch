@@ -153,18 +153,22 @@
 			function isMobileDevice() {
 				const ua = navigator.userAgent.toLowerCase();
 				
-				// Check for mobile devices
-				const isMobile = /mobile|android|iphone|ipod|blackberry|iemobile|opera mini/i.test(ua);
+				// Check for mobile devices (be more specific to avoid false positives)
+				// Only match if it's clearly a mobile device, not desktop with mobile in UA
+				const isMobile = /(iphone|ipod|android.*mobile|blackberry|iemobile|opera mini|mobile)/i.test(ua) && 
+				                 !/(windows|macintosh|linux|chromeos)/i.test(ua);
 				
 				// Check for tablets (iPad, Android tablets, etc.)
-				const isTablet = /ipad|android(?!.*mobile)|tablet|kindle|playbook/i.test(ua);
+				// iPad detection - be careful not to match desktop Safari on macOS
+				const isIPad = /ipad/i.test(ua) && !/macintosh/i.test(ua);
+				// Android tablets (not mobile phones)
+				const isAndroidTablet = /android/i.test(ua) && !/mobile/i.test(ua) && !/(windows|macintosh|linux|chromeos)/i.test(ua);
+				// Other tablets
+				const isOtherTablet = /(tablet|kindle|playbook)/i.test(ua) && !/(windows|macintosh|linux|chromeos)/i.test(ua);
 				
-				// Check for touch devices with small screens (optional - can be bypassed by resizing)
-				const isTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
-				const isSmallScreen = window.innerWidth < 1024 || window.innerHeight < 768;
-				const isTouchDevice = isTouch && isSmallScreen;
+				const isTablet = isIPad || isAndroidTablet || isOtherTablet;
 				
-				return isMobile || isTablet || isTouchDevice;
+				return isMobile || isTablet;
 			}
 
 			/**
