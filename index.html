@@ -152,23 +152,41 @@
 			 */
 			function isMobileDevice() {
 				const ua = navigator.userAgent.toLowerCase();
+				const originalUA = navigator.userAgent; // Keep original for case-sensitive checks
+				
+				// IMPORTANT: Check for iPad FIRST (before desktop OS check)
+				// Modern iPads (iPadOS 13+) report "Macintosh" in User-Agent to get desktop sites
+				// Detection methods:
+				// 1. Explicit "iPad" in User-Agent (older iPads)
+				// 2. Macintosh + Safari + no Windows/Linux + touch support (newer iPads)
+				const isIPad = /ipad/i.test(ua) || 
+				               originalUA.includes('iPad') ||
+				               (/macintosh/i.test(ua) && /safari/i.test(ua) && !/(windows|linux|chromeos)/i.test(ua) && 
+				                !/mobile/i.test(ua) && !/iphone/i.test(ua) && 
+				                (navigator.maxTouchPoints > 1 || 'ontouchstart' in window));
+				
+				if (isIPad) {
+					return true; // Block iPad
+				}
+				
+				// Check for other tablets
+				const isAndroidTablet = /android/i.test(ua) && !/mobile/i.test(ua) && !/(windows|macintosh|linux|chromeos)/i.test(ua);
+				const isOtherTablet = /(tablet|kindle|playbook)/i.test(ua) && !/(windows|macintosh|linux|chromeos)/i.test(ua);
+				
+				if (isAndroidTablet || isOtherTablet) {
+					return true; // Block tablets
+				}
 				
 				// Check for mobile devices (be more specific to avoid false positives)
-				// Only match if it's clearly a mobile device, not desktop with mobile in UA
 				const isMobile = /(iphone|ipod|android.*mobile|blackberry|iemobile|opera mini|mobile)/i.test(ua) && 
 				                 !/(windows|macintosh|linux|chromeos)/i.test(ua);
 				
-				// Check for tablets (iPad, Android tablets, etc.)
-				// iPad detection - be careful not to match desktop Safari on macOS
-				const isIPad = /ipad/i.test(ua) && !/macintosh/i.test(ua);
-				// Android tablets (not mobile phones)
-				const isAndroidTablet = /android/i.test(ua) && !/mobile/i.test(ua) && !/(windows|macintosh|linux|chromeos)/i.test(ua);
-				// Other tablets
-				const isOtherTablet = /(tablet|kindle|playbook)/i.test(ua) && !/(windows|macintosh|linux|chromeos)/i.test(ua);
+				if (isMobile) {
+					return true; // Block mobile
+				}
 				
-				const isTablet = isIPad || isAndroidTablet || isOtherTablet;
-				
-				return isMobile || isTablet;
+				// If we get here, it's likely a desktop (already checked for iPad above)
+				return false;
 			}
 
 			/**
