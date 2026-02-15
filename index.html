@@ -414,11 +414,6 @@
 					assetsURI = "assets6.epk"; // Fallback if no token (shouldn't happen)
 				}
 				
-				// On mobile/iPad, disable visual viewport so the game uses stable window size.
-				// Otherwise visualViewport scale/size changes (address bar, keyboard) make the
-				// action bar and inventory keep resizing between big and small.
-				var useVisualViewport = !isMobileDevice();
-
 				window.eaglercraftXOpts = {
 					demoMode: false,
 					container: "game_frame",
@@ -441,7 +436,7 @@
                     checkShaderGLErrors: false,
 					deobfStackTraces: false,
 					allowFNAWSkins: true,
-					useVisualViewport: useVisualViewport,
+					useVisualViewport: true,
 					html5CursorSupport: true,
 					eaglerNoDelay: true,
 					username: constructedUsername || 'Player',
