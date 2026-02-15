@@ -125,15 +125,9 @@ Object.defineProperty(Document.prototype, "pointerLockElement", {
     }
 });
 // When exitPointerLock is called, this dispatches an event, clears the
-// On mobile we do NOT clear fakelock so the game always thinks pointer lock is active
-// and keeps the smaller action bar / hotbar scale. Otherwise tapping Done/Multiplayer
-// would switch to "big" GUI until long-press again.
 Object.defineProperty(Document.prototype, "exitPointerLock", {
     value: function() {
-        // Only clear fakelock on desktop; on mobile (this script only loads on mobile) keep it set
-        if (!isMobile()) {
-            window.fakelock = null;
-        }
+        window.fakelock = null
         document.dispatchEvent(new Event('pointerlockchange'));
         setButtonVisibility(false);
         return true
@@ -334,23 +328,6 @@ function insertCanvasElements() {
     // Show in-game controls by default when canvas loads. On iPad/iOS the game may not call requestPointerLock
     // until after a user gesture, so defaulting to true ensures controls are visible without requiring a long-press.
     setButtonVisibility(true);
-    // Make the game use "in-game" GUI scale (smaller action bar / hotbar) from the start. Without this, the game
-    // only uses the smaller scale after requestPointerLock() (e.g. after long-press), so the GUI flips between big and small.
-    window.fakelock = canvas;
-    function triggerScaleUpdate() {
-        document.dispatchEvent(new Event('pointerlockchange'));
-        if (typeof window.dispatchEvent === 'function') {
-            window.dispatchEvent(new Event('resize'));
-        }
-        if (typeof window.visualViewport !== 'undefined') {
-            try { window.visualViewport.dispatchEvent(new Event('resize')); } catch (e) {}
-        }
-    }
-    triggerScaleUpdate();
-    // Game may apply scale at different times; fire repeatedly so small scale is applied as soon as the game is ready.
-    [0, 100, 300, 600, 1000, 2000].forEach(function(delay) {
-        setTimeout(triggerScaleUpdate, delay);
-    });
     // All of the touch buttons
     let strafeRightButton = createTouchButton("strafeRightButton", "inGame", "div");
     strafeRightButton.classList.add("strafeSize");
@@ -631,19 +608,7 @@ function insertCanvasElements() {
     let chatButton = createTouchButton("chatButton", "inGame");
     chatButton.classList.add("smallMobileControl");
     chatButton.style.cssText = "top: 0.5vh; margin: auto; left: 0vh; right: 14vh;"
-    chatButton.addEventListener("touchstart", function(e){
-        keyEvent("t", "keydown"); // Open chat
-        // Focus hidden input so the virtual keyboard opens (same input the keyboard button uses)
-        var input = document.getElementById("hiddenInput");
-        if (input) {
-            // Short delay so chat GUI opens first; 0ms keeps focus inside the user gesture for iOS
-            setTimeout(function() {
-                input.focus();
-                input.select();
-                window.hiddenInputFocused = true;
-            }, 0);
-        }
-    }, false); // For some reason dispatching a keyup event for this closes the chat, which is really weird
+    chatButton.addEventListener("touchstart", function(e){keyEvent("t", "keydown")}, false); // For some reason dispatching a keyup event for this closes the chat, which is really weird
     document.body.appendChild(chatButton);
     let perspectiveButton = createTouchButton("perspectiveButton", "inGame");
     perspectiveButton.classList.add("smallMobileControl");
