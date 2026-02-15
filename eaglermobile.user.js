@@ -648,7 +648,8 @@ function insertCanvasElements() {
 let customStyle = document.createElement("style");
 customStyle.textContent = `
     .mobileControl, .mobileControl:active, .mobileControl.active{
-        position: absolute; 
+        position: absolute !important;
+        z-index: 2147483647 !important;
         width: 10vh;
         height: 10vh;
         font-size: 4vh;
@@ -671,7 +672,8 @@ customStyle.textContent = `
         -webkit-tap-highlight-color: rgba(255, 255, 255, 0);
     }
     .mobileControl:active, .mobileControl.active {
-        position: absolute; 
+        position: absolute !important;
+        z-index: 2147483647 !important;
         width: 10vh;
         height: 10vh;
         font-size: 4vh;
@@ -726,6 +728,7 @@ customStyle.textContent = `
         min-height: -webkit-fill-available !important;
         margin: 0 !important;
         padding: 0 !important;
+        z-index: 0 !important;
     }
     canvas {
         width: 100% !important;
