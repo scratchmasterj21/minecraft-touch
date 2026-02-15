@@ -120,13 +120,6 @@
 				margin-bottom: 20px;
 			}
 		</style>
-		<!-- Hide only the file chooser and keyboard zone; keep the "press to start" screen visible so you can tap to begin -->
-		<style id="hide-integrated-mobile-controls">
-			._eaglercraftX_mobile_file_chooser_popup,
-			._eaglercraftX_keyboard_open_zone {
-				display: none !important;
-			}
-		</style>
 
 		<script>
 			// ============================================
@@ -446,7 +439,8 @@
 					useVisualViewport: true,
 					html5CursorSupport: true,
 					eaglerNoDelay: true,
-					username: constructedUsername || 'Player'
+					username: constructedUsername || 'Player',
+					disableIntegratedTouchControls: true
 				};
 
 				var q = window.location.search;

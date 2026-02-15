@@ -1,15 +1,5 @@
 // Removed brainless unsafeWindow 
 console.log("Eagler Pocket Mobile v1.40")
-
-// Disable Eaglercraft's integrated touch overlay (canvas-drawn) by making the game think there are no touch points.
-// Our own DOM-based controls below will still receive touch events.
-try {
-    var desc = Object.getOwnPropertyDescriptor(navigator, 'maxTouchPoints');
-    if (desc && desc.configurable) {
-        Object.defineProperty(navigator, 'maxTouchPoints', { get: function() { return 0; }, configurable: true, enumerable: desc.enumerable });
-    }
-} catch (e) { /* ignore */ }
-
 // TODO: remove the mobile check is implement the dynamic enabling and disabling of individual features
 function isMobile() {
     try {
@@ -692,11 +682,6 @@ customStyle.textContent = `
         height: 100% !important;
         height: 100svh !important;
         height: -webkit-fill-available !important;
-    }
-    /* Hide Eaglercraft's integrated mobile UI so only our touch controls are used (keep press-to-start screen visible) */
-    ._eaglercraftX_mobile_file_chooser_popup,
-    ._eaglercraftX_keyboard_open_zone {
-        display: none !important;
     }
     .mobileControl {
         position: absolute; 
