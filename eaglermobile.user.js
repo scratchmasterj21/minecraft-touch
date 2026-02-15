@@ -691,9 +691,48 @@ customStyle.textContent = `
         outline: none;
         -webkit-tap-highlight-color: rgba(255, 255, 255, 0);
     }
-    html, body, canvas {
-        height: 100svh !important;
-        height: -webkit-fill-available !important;
+    html, body {
+        width: 100% !important;
+        height: 100% !important;
+        min-height: 100svh !important;
+        min-height: 100dvh !important;
+        min-height: -webkit-fill-available !important;
+        margin: 0;
+        padding: 0;
+        overflow: hidden;
+        touch-action: pan-x pan-y;
+        -webkit-touch-callout: none;
+        -webkit-user-select: none;
+        -khtml-user-select: none;
+        -moz-user-select: none;
+        -ms-user-select: none;
+        user-select: none;
+        outline: none;
+        -webkit-tap-highlight-color: rgba(255, 255, 255, 0);
+    }
+    #game_frame {
+        position: fixed !important;
+        top: 0 !important;
+        left: 0 !important;
+        right: 0 !important;
+        bottom: 0 !important;
+        width: 100% !important;
+        height: 100% !important;
+        min-width: 100vw !important;
+        min-height: 100svh !important;
+        min-height: 100dvh !important;
+        min-height: -webkit-fill-available !important;
+        margin: 0 !important;
+        padding: 0 !important;
+    }
+    canvas {
+        width: 100% !important;
+        height: 100% !important;
+        max-width: 100vw !important;
+        max-height: 100svh !important;
+        max-height: 100dvh !important;
+        max-height: -webkit-fill-available !important;
+        display: block;
         touch-action: pan-x pan-y;
         -webkit-touch-callout: none;
         -webkit-user-select: none;
