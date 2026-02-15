@@ -644,9 +644,29 @@ function insertCanvasElements() {
 // CSS for touch screen buttons, along with fixing iOS's issues with 100vh ignoring the naviagtion bar, and actually disabling zoom because safari ignores user-scalable=no :(
 let customStyle = document.createElement("style");
 customStyle.textContent = `
-    html, body, canvas {
+    html, body {
+        margin: 0;
+        padding: 0;
+        width: 100%;
         height: 100svh !important;
         height: -webkit-fill-available !important;
+        overflow: hidden;
+    }
+    /* Game container and wrapper must fill viewport so canvas gets correct size at init */
+    #game_frame,
+    #game_frame ._eaglercraftX_wrapper_element,
+    #game_frame ._eaglercraftX_root_element {
+        position: absolute !important;
+        top: 0 !important;
+        left: 0 !important;
+        right: 0 !important;
+        bottom: 0 !important;
+        width: 100% !important;
+        height: 100% !important;
+        min-height: 100svh !important;
+        min-height: -webkit-fill-available !important;
+    }
+    html, body, canvas {
         touch-action: pan-x pan-y;
         -webkit-touch-callout: none;
         -webkit-user-select: none;
@@ -656,6 +676,12 @@ customStyle.textContent = `
         user-select: none;
         outline: none;
         -webkit-tap-highlight-color: rgba(255, 255, 255, 0);
+    }
+    canvas {
+        width: 100% !important;
+        height: 100% !important;
+        height: 100svh !important;
+        height: -webkit-fill-available !important;
     }
     .mobileControl {
         position: absolute; 
