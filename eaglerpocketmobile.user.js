@@ -125,9 +125,15 @@ Object.defineProperty(Document.prototype, "pointerLockElement", {
     }
 });
 // When exitPointerLock is called, this dispatches an event, clears the
+// On mobile we do NOT clear fakelock so the game always thinks pointer lock is active
+// and keeps the smaller action bar / hotbar scale. Otherwise tapping Done/Multiplayer
+// would switch to "big" GUI until long-press again.
 Object.defineProperty(Document.prototype, "exitPointerLock", {
     value: function() {
-        window.fakelock = null
+        // Only clear fakelock on desktop; on mobile (this script only loads on mobile) keep it set
+        if (!isMobile()) {
+            window.fakelock = null;
+        }
         document.dispatchEvent(new Event('pointerlockchange'));
         setButtonVisibility(false);
         return true
