@@ -211,13 +211,14 @@ inMenuStyle.textContent = `
     }`;
 document.documentElement.appendChild(inMenuStyle);
 
-// Hide only the "Press any key" overlay. Do NOT hide _eaglercraftX_keyboard_open_zone - the game uses it for touch input.
+// Make "Press any key" overlay invisible but still receive touches so tap-to-continue works.
 function hideGameMobileOverlays() {
     document.querySelectorAll('._eaglercraftX_mobile_press_any_key').forEach(function(el) {
-        el.style.setProperty('display', 'none', 'important');
-        el.style.setProperty('visibility', 'hidden', 'important');
-        el.style.setProperty('pointer-events', 'none', 'important');
         el.style.setProperty('opacity', '0', 'important');
+        el.style.setProperty('background-color', 'transparent', 'important');
+        el.style.setProperty('border', 'none', 'important');
+        el.style.setProperty('color', 'transparent', 'important');
+        // No visibility:hidden or pointer-events:none - element must receive the tap to continue loading
     });
 }
 function startHideGameOverlaysObserver() {
@@ -771,12 +772,12 @@ customStyle.textContent = `
     .hide {
         display: none;
     }
-    /* Hide only the "Press any key" overlay. Do not hide _eaglercraftX_keyboard_open_zone - game needs it for touch. */
+    /* Invisible but still receives touches so tap-to-continue works during loading */
     ._eaglercraftX_mobile_press_any_key {
-        display: none !important;
-        visibility: hidden !important;
-        pointer-events: none !important;
         opacity: 0 !important;
+        background-color: transparent !important;
+        border: none !important;
+        color: transparent !important;
     }
     #fileUpload {
         position: absolute;
