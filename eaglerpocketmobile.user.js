@@ -321,7 +321,9 @@ function insertCanvasElements() {
 
     canvas.addEventListener("touchend", canvasTouchEnd, false); 
     canvas.addEventListener("touchcancel", canvasTouchEnd, false); // TODO: Find out why this is different than touchend
-    setButtonVisibility(window.fakelock != null); //Updates our mobile controls when the canvas finally loads
+    // Show in-game controls by default when canvas loads. On iPad/iOS the game may not call requestPointerLock
+    // until after a user gesture, so defaulting to true ensures controls are visible without requiring a long-press.
+    setButtonVisibility(true);
     // All of the touch buttons
     let strafeRightButton = createTouchButton("strafeRightButton", "inGame", "div");
     strafeRightButton.classList.add("strafeSize");
