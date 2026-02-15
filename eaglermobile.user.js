@@ -211,24 +211,6 @@ inMenuStyle.textContent = `
     }`;
 document.documentElement.appendChild(inMenuStyle);
 
-// Make "Press any key" overlay invisible but still receive touches so tap-to-continue works.
-function hideGameMobileOverlays() {
-    document.querySelectorAll('._eaglercraftX_mobile_press_any_key').forEach(function(el) {
-        el.style.setProperty('opacity', '0', 'important');
-        el.style.setProperty('background-color', 'transparent', 'important');
-        el.style.setProperty('border', 'none', 'important');
-        el.style.setProperty('color', 'transparent', 'important');
-        // No visibility:hidden or pointer-events:none - element must receive the tap to continue loading
-    });
-}
-function startHideGameOverlaysObserver() {
-    const root = document.body || document.documentElement;
-    const obs = new MutationObserver(function() { hideGameMobileOverlays(); });
-    obs.observe(root, { childList: true, subtree: true });
-    hideGameMobileOverlays();
-}
-if (document.body) startHideGameOverlaysObserver();
-else document.addEventListener('DOMContentLoaded', startHideGameOverlaysObserver);
 
 // The canvas is created by the client after it finishes unzipping and loading. When the canvas is created, this applies any necessary event listeners and creates buttons
 function waitForElm(selector) {
@@ -358,7 +340,6 @@ function insertCanvasElements() {
     // Show in-game controls by default when canvas loads (no tap/long-press needed)
     window.fakelock = canvas;
     setButtonVisibility(true);
-    hideGameMobileOverlays();
     // All of the touch buttons
     let strafeRightButton = createTouchButton("strafeRightButton", "inGame", "div");
     strafeRightButton.style.cssText = "left:20vh;bottom:20vh;"
@@ -771,13 +752,6 @@ customStyle.textContent = `
     }
     .hide {
         display: none;
-    }
-    /* Invisible but still receives touches so tap-to-continue works during loading */
-    ._eaglercraftX_mobile_press_any_key {
-        opacity: 0 !important;
-        background-color: transparent !important;
-        border: none !important;
-        color: transparent !important;
     }
     #fileUpload {
         position: absolute;
