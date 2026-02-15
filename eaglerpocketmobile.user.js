@@ -97,12 +97,8 @@ function wheelEvent(element, delta) {
 function setButtonVisibility(pointerLocked) {
     let inGameStyle = document.getElementById('inGameStyle');
     let inMenuStyle = document.getElementById('inMenuStyle');
-    if (!inGameStyle || !inMenuStyle) return;
-    // On mobile always show in-game controls (WASD, jump, etc.). The game toggles pointer lock
-    // when tapping menu buttons (Done, Multiplayer, etc.) which would otherwise hide them.
-    inGameStyle.disabled = true;
-    // Only toggle in-menu controls (Exit, Keyboard): show when in a menu (not pointer locked).
-    inMenuStyle.disabled = pointerLocked;
+    inGameStyle.disabled = pointerLocked;
+    inMenuStyle.disabled = !pointerLocked;  
 }
 // POINTERLOCK
 // When requestpointerlock is called, this dispatches an event, saves the requested element to window.fakelock, and unhides the touch controls
@@ -325,9 +321,7 @@ function insertCanvasElements() {
 
     canvas.addEventListener("touchend", canvasTouchEnd, false); 
     canvas.addEventListener("touchcancel", canvasTouchEnd, false); // TODO: Find out why this is different than touchend
-    // Show in-game controls by default when canvas loads. On iPad/iOS the game may not call requestPointerLock
-    // until after a user gesture, so defaulting to true ensures controls are visible without requiring a long-press.
-    setButtonVisibility(true);
+    setButtonVisibility(window.fakelock != null); //Updates our mobile controls when the canvas finally loads
     // All of the touch buttons
     let strafeRightButton = createTouchButton("strafeRightButton", "inGame", "div");
     strafeRightButton.classList.add("strafeSize");
@@ -650,29 +644,9 @@ function insertCanvasElements() {
 // CSS for touch screen buttons, along with fixing iOS's issues with 100vh ignoring the naviagtion bar, and actually disabling zoom because safari ignores user-scalable=no :(
 let customStyle = document.createElement("style");
 customStyle.textContent = `
-    html, body {
-        margin: 0;
-        padding: 0;
-        width: 100%;
+    html, body, canvas {
         height: 100svh !important;
         height: -webkit-fill-available !important;
-        overflow: hidden;
-    }
-    /* Game container and wrapper must fill viewport so canvas gets correct size at init */
-    #game_frame,
-    #game_frame ._eaglercraftX_wrapper_element,
-    #game_frame ._eaglercraftX_root_element {
-        position: absolute !important;
-        top: 0 !important;
-        left: 0 !important;
-        right: 0 !important;
-        bottom: 0 !important;
-        width: 100% !important;
-        height: 100% !important;
-        min-height: 100svh !important;
-        min-height: -webkit-fill-available !important;
-    }
-    html, body, canvas {
         touch-action: pan-x pan-y;
         -webkit-touch-callout: none;
         -webkit-user-select: none;
@@ -683,15 +657,8 @@ customStyle.textContent = `
         outline: none;
         -webkit-tap-highlight-color: rgba(255, 255, 255, 0);
     }
-    canvas {
-        width: 100% !important;
-        height: 100% !important;
-        height: 100svh !important;
-        height: -webkit-fill-available !important;
-    }
     .mobileControl {
-        position: absolute;
-        z-index: 99999;
+        position: absolute; 
         width: 9vh;
         height: 9vh;
         -webkit-user-select: none;
@@ -707,7 +674,6 @@ customStyle.textContent = `
         border: none;
 		margin: 1vh;
         opacity: 0.5;
-        pointer-events: auto;
     }
     .mobileControl:active {
         opacity: 0.75;
