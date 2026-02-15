@@ -243,12 +243,9 @@ function createTouchButton(buttonClass, buttonDisplay, elementName) {
 
 waitForElm('canvas').then(() => {insertCanvasElements()});
 function insertCanvasElements() {    
-    // Translates touch events to mouse/wheel so only eaglermobile controls are used.
-    // Use capture phase and stop propagation so the game's integrated touch overlay never sees touches.
+    // Translates touchmove events to mousemove events when inGame, and touchmove events to wheele events when inMenu
     var canvas = document.querySelector('canvas');
     canvas.addEventListener("touchstart", function(e) {
-        e.stopImmediatePropagation();
-        e.preventDefault();
         if(window.canvasTouchMode < 2) { // If a touch is initiated but not assigned
             if(window.canvasPrimaryID == null) {
                 window.canvasTouchMode = 1;
@@ -274,11 +271,10 @@ function insertCanvasElements() {
                 clearTimeout(window.crouchTimer); // TODO: Find out why this isn't redudnant
             }
         }
-    }, true);
+    }, false);
 
     canvas.addEventListener("touchmove", function(e) {
-        e.stopImmediatePropagation();
-        e.preventDefault();
+        e.preventDefault() // Prevents window zoom when using two fingers
         var primaryTouch;
         for (let touchIndex = 0; touchIndex < e.targetTouches.length; touchIndex++) { // Iterate through our touches to find a touch event matching the primary touch ID
             if(e.targetTouches[touchIndex].identifier == window.canvasPrimaryID) {
@@ -317,7 +313,7 @@ function insertCanvasElements() {
             canvasTouchPreviousX = primaryTouch.clientX
             canvasTouchPreviousY = primaryTouch.clientY
         }
-    }, true);
+    }, false);
 
     function canvasTouchEnd(e) {
         for(let touchIndex = 0; touchIndex < e.changedTouches.length; touchIndex++) { // Iterate through changed touches to find primary touch
@@ -339,8 +335,8 @@ function insertCanvasElements() {
         }
     }
 
-    canvas.addEventListener("touchend", function(e) { e.stopImmediatePropagation(); e.preventDefault(); canvasTouchEnd(e); }, true); 
-    canvas.addEventListener("touchcancel", function(e) { e.stopImmediatePropagation(); e.preventDefault(); canvasTouchEnd(e); }, true);
+    canvas.addEventListener("touchend", canvasTouchEnd, false); 
+    canvas.addEventListener("touchcancel", canvasTouchEnd, false); // TODO: Find out why this is different than touchend
     // Show in-game controls by default when canvas loads (no tap/long-press needed)
     window.fakelock = canvas;
     setButtonVisibility(true);
