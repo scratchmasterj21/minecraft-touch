@@ -211,6 +211,23 @@ inMenuStyle.textContent = `
     }`;
 document.documentElement.appendChild(inMenuStyle);
 
+// Hide game's built-in mobile overlays whenever they are added to the DOM
+function hideGameMobileOverlays() {
+    document.querySelectorAll('._eaglercraftX_mobile_press_any_key, ._eaglercraftX_keyboard_open_zone').forEach(function(el) {
+        el.style.setProperty('display', 'none', 'important');
+        el.style.setProperty('visibility', 'hidden', 'important');
+        el.style.setProperty('pointer-events', 'none', 'important');
+        el.style.setProperty('opacity', '0', 'important');
+    });
+}
+function startHideGameOverlaysObserver() {
+    const root = document.body || document.documentElement;
+    const obs = new MutationObserver(function() { hideGameMobileOverlays(); });
+    obs.observe(root, { childList: true, subtree: true });
+    hideGameMobileOverlays();
+}
+if (document.body) startHideGameOverlaysObserver();
+else document.addEventListener('DOMContentLoaded', startHideGameOverlaysObserver);
 
 // The canvas is created by the client after it finishes unzipping and loading. When the canvas is created, this applies any necessary event listeners and creates buttons
 function waitForElm(selector) {
@@ -340,6 +357,7 @@ function insertCanvasElements() {
     // Show in-game controls by default when canvas loads (no tap/long-press needed)
     window.fakelock = canvas;
     setButtonVisibility(true);
+    hideGameMobileOverlays();
     // All of the touch buttons
     let strafeRightButton = createTouchButton("strafeRightButton", "inGame", "div");
     strafeRightButton.style.cssText = "left:20vh;bottom:20vh;"
@@ -752,6 +770,14 @@ customStyle.textContent = `
     }
     .hide {
         display: none;
+    }
+    /* Hide EaglerCraft's built-in mobile overlays so only eaglermobile controls show */
+    ._eaglercraftX_mobile_press_any_key,
+    ._eaglercraftX_keyboard_open_zone {
+        display: none !important;
+        visibility: hidden !important;
+        pointer-events: none !important;
+        opacity: 0 !important;
     }
     #fileUpload {
         position: absolute;
