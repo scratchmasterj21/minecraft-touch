@@ -97,8 +97,12 @@ function wheelEvent(element, delta) {
 function setButtonVisibility(pointerLocked) {
     let inGameStyle = document.getElementById('inGameStyle');
     let inMenuStyle = document.getElementById('inMenuStyle');
-    inGameStyle.disabled = pointerLocked;
-    inMenuStyle.disabled = !pointerLocked;  
+    if (!inGameStyle || !inMenuStyle) return;
+    // On mobile always show in-game controls (WASD, jump, etc.). The game toggles pointer lock
+    // when tapping menu buttons (Done, Multiplayer, etc.) which would otherwise hide them.
+    inGameStyle.disabled = true;
+    // Only toggle in-menu controls (Exit, Keyboard): show when in a menu (not pointer locked).
+    inMenuStyle.disabled = pointerLocked;
 }
 // POINTERLOCK
 // When requestpointerlock is called, this dispatches an event, saves the requested element to window.fakelock, and unhides the touch controls
