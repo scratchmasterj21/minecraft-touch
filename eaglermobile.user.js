@@ -211,9 +211,9 @@ inMenuStyle.textContent = `
     }`;
 document.documentElement.appendChild(inMenuStyle);
 
-// Hide game's built-in mobile overlays whenever they are added to the DOM
+// Hide only the "Press any key" overlay. Do NOT hide _eaglercraftX_keyboard_open_zone - the game uses it for touch input.
 function hideGameMobileOverlays() {
-    document.querySelectorAll('._eaglercraftX_mobile_press_any_key, ._eaglercraftX_keyboard_open_zone').forEach(function(el) {
+    document.querySelectorAll('._eaglercraftX_mobile_press_any_key').forEach(function(el) {
         el.style.setProperty('display', 'none', 'important');
         el.style.setProperty('visibility', 'hidden', 'important');
         el.style.setProperty('pointer-events', 'none', 'important');
@@ -771,9 +771,8 @@ customStyle.textContent = `
     .hide {
         display: none;
     }
-    /* Hide EaglerCraft's built-in mobile overlays so only eaglermobile controls show */
-    ._eaglercraftX_mobile_press_any_key,
-    ._eaglercraftX_keyboard_open_zone {
+    /* Hide only the "Press any key" overlay. Do not hide _eaglercraftX_keyboard_open_zone - game needs it for touch. */
+    ._eaglercraftX_mobile_press_any_key {
         display: none !important;
         visibility: hidden !important;
         pointer-events: none !important;
