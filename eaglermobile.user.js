@@ -111,7 +111,9 @@ function wheelEvent(element, delta) {
 function setButtonVisibility(pointerLocked) {
     let inGameStyle = document.getElementById('inGameStyle');
     let inMenuStyle = document.getElementById('inMenuStyle');
-    inGameStyle.disabled = pointerLocked;
+    // Always show inGame controls (WASD, jump, etc.) so they are not hidden by game's exitPointerLock (menus/title).
+    // Only toggle inMenu (top bar: exit, keyboard) based on pointer lock.
+    inGameStyle.disabled = true;  // never apply .inGame { display: none }
     inMenuStyle.disabled = !pointerLocked;  
 }
 // POINTERLOCK
