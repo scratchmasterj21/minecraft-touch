@@ -690,7 +690,8 @@ customStyle.textContent = `
         height: -webkit-fill-available !important;
     }
     .mobileControl {
-        position: absolute; 
+        position: absolute;
+        z-index: 99999;
         width: 9vh;
         height: 9vh;
         -webkit-user-select: none;
@@ -706,6 +707,7 @@ customStyle.textContent = `
         border: none;
 		margin: 1vh;
         opacity: 0.5;
+        pointer-events: auto;
     }
     .mobileControl:active {
         opacity: 0.75;
