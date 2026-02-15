@@ -325,9 +325,12 @@ function insertCanvasElements() {
 
     canvas.addEventListener("touchend", canvasTouchEnd, false); 
     canvas.addEventListener("touchcancel", canvasTouchEnd, false); // TODO: Find out why this is different than touchend
-    // Show in-game controls by default when canvas loads. On iPad/iOS the game may not call requestPointerLock
-    // until after a user gesture, so defaulting to true ensures controls are visible without requiring a long-press.
+    // Show in-game controls by default when canvas loads.
     setButtonVisibility(true);
+    // Simulate pointer lock from the start so the game uses the SMALL action bar / inventory bar by default.
+    // Without this, the game thinks pointer is not locked and uses large GUI until the user long-presses (which triggers requestPointerLock).
+    window.fakelock = canvas;
+    document.dispatchEvent(new Event('pointerlockchange'));
     // All of the touch buttons
     let strafeRightButton = createTouchButton("strafeRightButton", "inGame", "div");
     strafeRightButton.classList.add("strafeSize");
@@ -647,18 +650,20 @@ function insertCanvasElements() {
     }, false);
     document.body.appendChild(coordinatesButton);
 }
-// CSS for touch screen buttons, along with fixing iOS's issues with 100vh ignoring the naviagtion bar, and actually disabling zoom because safari ignores user-scalable=no :(
+// CSS for touch screen buttons, and disabling zoom because safari ignores user-scalable=no :(
+// Use 100vh (layout viewport) for the GAME CONTAINER and canvas so their size stays stable on iPad.
+// 100svh / -webkit-fill-available change when the address bar or keyboard show/hide, which made the
+// game keep recalculating GUI scale and the action bar / item bar would jump between big and small.
 let customStyle = document.createElement("style");
 customStyle.textContent = `
     html, body {
         margin: 0;
         padding: 0;
         width: 100%;
-        height: 100svh !important;
-        height: -webkit-fill-available !important;
+        height: 100vh;
         overflow: hidden;
     }
-    /* Game container and wrapper must fill viewport so canvas gets correct size at init */
+    /* Game container and wrapper: use 100vh so size is STABLE (no jump when browser chrome changes). */
     #game_frame,
     #game_frame ._eaglercraftX_wrapper_element,
     #game_frame ._eaglercraftX_root_element {
@@ -669,8 +674,7 @@ customStyle.textContent = `
         bottom: 0 !important;
         width: 100% !important;
         height: 100% !important;
-        min-height: 100svh !important;
-        min-height: -webkit-fill-available !important;
+        min-height: 100vh !important;
     }
     html, body, canvas {
         touch-action: pan-x pan-y;
@@ -686,8 +690,7 @@ customStyle.textContent = `
     canvas {
         width: 100% !important;
         height: 100% !important;
-        height: 100svh !important;
-        height: -webkit-fill-available !important;
+        min-height: 100vh !important;
     }
     .mobileControl {
         position: absolute; 
