@@ -16,6 +16,18 @@
 		<!-- Google Identity Services -->
 		<script src="https://accounts.google.com/gsi/client" async defer></script>
 		
+		<!-- Load EaglerMobile early on mobile so it runs before the game and controls show by default -->
+		<script>
+		(function() {
+			var ua = navigator.userAgent.toLowerCase();
+			var isMobile = /(iphone|ipod|ipad|android.*mobile|blackberry|iemobile|opera mini|mobile)/i.test(ua) ||
+				(/macintosh/i.test(ua) && /safari/i.test(ua) && /mobile/i.test(ua));
+			if (isMobile) {
+				document.write('<script type="text/javascript" src="eaglermobile.user.js"><\x2fscript>');
+			}
+		})();
+		</script>
+		
 		<!-- Game code -->
 		<script type="text/javascript" src="classes.js"></script>
 
@@ -452,21 +464,8 @@
 				main(); // Start the game
 			}
 
-			// Load mobile controls script only on mobile/tablet
-			function loadMobileScriptIfNeeded() {
-				if (isMobileDevice()) {
-					var script = document.createElement('script');
-					script.type = 'text/javascript';
-					script.src = 'eaglermobile.user.js';
-					document.head.appendChild(script);
-				}
-			}
-
 			// Check for mobile devices and initialize on page load
 			window.addEventListener('load', function() {
-				// Load mobile controls only on mobile/tablet
-				loadMobileScriptIfNeeded();
-
 				// Check if device is mobile/tablet and block access - COMMENTED OUT to try mobile controls
 				// if (isMobileDevice()) {
 				// 	showDeviceBlockMessage();
