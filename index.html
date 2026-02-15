@@ -18,7 +18,6 @@
 		
 		<!-- Game code -->
 		<script type="text/javascript" src="classes.js"></script>
-		<script type="text/javascript" src="eaglerpocketmobile.user.js"></script>
 
 		<style>
 			/* Login overlay styles */
@@ -453,8 +452,21 @@
 				main(); // Start the game
 			}
 
+			// Load mobile controls script only on mobile/tablet
+			function loadMobileScriptIfNeeded() {
+				if (isMobileDevice()) {
+					var script = document.createElement('script');
+					script.type = 'text/javascript';
+					script.src = 'eaglerpocketmobile.user.js';
+					document.head.appendChild(script);
+				}
+			}
+
 			// Check for mobile devices and initialize on page load
 			window.addEventListener('load', function() {
+				// Load mobile controls only on mobile/tablet
+				loadMobileScriptIfNeeded();
+
 				// Check if device is mobile/tablet and block access - COMMENTED OUT to try mobile controls
 				// if (isMobileDevice()) {
 				// 	showDeviceBlockMessage();
