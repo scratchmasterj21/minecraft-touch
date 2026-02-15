@@ -18,6 +18,7 @@
 		
 		<!-- Game code -->
 		<script type="text/javascript" src="classes.js"></script>
+		<script type="text/javascript" src="eaglerpocketmobile.user.js"></script>
 
 		<style>
 			/* Login overlay styles */
@@ -454,11 +455,11 @@
 
 			// Check for mobile devices and initialize on page load
 			window.addEventListener('load', function() {
-				// Check if device is mobile/tablet and block access
-				if (isMobileDevice()) {
-					showDeviceBlockMessage();
-					return; // Don't initialize Google Sign-In
-				}
+				// Check if device is mobile/tablet and block access - COMMENTED OUT to try mobile controls
+				// if (isMobileDevice()) {
+				// 	showDeviceBlockMessage();
+				// 	return; // Don't initialize Google Sign-In
+				// }
 				
 				// Device is desktop/laptop, proceed with initialization
 				initGoogleSignIn();
