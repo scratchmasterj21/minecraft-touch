@@ -26,6 +26,24 @@ function isMobile() {
 if(!isMobile()) {
     alert("WARNING: This script was created for mobile, and may break functionality in non-mobile browsers!");
 }
+
+// Disable EaglercraftX integrated touch controls so this script's controls don't overlap
+(function() {
+    var _opts = window.eaglercraftXOpts || {};
+    if (typeof _opts === 'object') _opts.disableIntegratedTouchControls = true;
+    try {
+        Object.defineProperty(window, 'eaglercraftXOpts', {
+            get: function() { return _opts; },
+            set: function(v) {
+                _opts = (v != null && typeof v === 'object') ? v : _opts;
+                if (typeof _opts === 'object') _opts.disableIntegratedTouchControls = true;
+            },
+            configurable: true
+        });
+    } catch (e) {}
+    window.eaglercraftXOpts = _opts;
+})();
+
 // TODO: consolidate all of these into a single object?
 window.crouchLock = false; // Used for crouch mobile control
 window.sprintLock = false; // Used for sprint mobile control
