@@ -146,6 +146,11 @@
 			let constructedUsername = null;
 			let currentIdToken = null;
 			let assetsChecksum = null;
+			const ACCESS_RECHECK_INTERVAL_MS = 60000;
+			let periodicAccessCheckTimer = null;
+			let periodicAccessCheckInFlight = false;
+			let transientAccessFailureCount = 0;
+			let accessRevoked = false;
 
 			/**
 			 * Detect if device is mobile, tablet, or iPad
@@ -282,12 +287,9 @@
 			}
 
 			/**
-			 * Check access using Google ID token
+			 * Perform authenticated access check against worker
 			 */
-			async function checkAccessWithToken(idToken) {
-				// Store token for use in assets loading
-				currentIdToken = idToken;
-				
+			async function fetchAccessDecision(idToken) {
 				try {
 					const response = await fetch(`${CONFIG.WORKER_URL}/check-access`, {
 						method: 'POST',
@@ -299,14 +301,56 @@
 						})
 					});
 
-					const result = await response.json();
-
-					if (result.error) {
-						showError(result.message || result.error);
-						showLoading(false);
-						return;
+					let result = null;
+					try {
+						result = await response.json();
+					} catch (err) {
+						return {
+							type: 'transient',
+							reason: 'Invalid response from access service'
+						};
 					}
 
+					if (result && result.allowed === true) {
+						return {
+							type: 'allowed',
+							result: result
+						};
+					}
+
+					if (result && result.allowed === false) {
+						return {
+							type: 'denied',
+							reason: result.reason || result.message || 'Access denied',
+							result: result
+						};
+					}
+
+					// Treat explicit auth/permission failures as deny decisions
+					if (response.status === 401 || response.status === 403) {
+						return {
+							type: 'denied',
+							reason: (result && (result.message || result.error)) || 'Access denied',
+							result: result
+						};
+					}
+
+					return {
+						type: 'transient',
+						reason: (result && (result.message || result.error)) || 'Could not verify access right now'
+					};
+				} catch (err) {
+					return {
+						type: 'transient',
+						reason: 'Could not verify access right now'
+					};
+				}
+			}
+
+			/**
+			 * Update local runtime state from an allowed access response
+			 */
+			function applyAllowedAccessResult(result) {
 					// Get username from server response (constructed server-side for security)
 					if (result.username) {
 						constructedUsername = result.username;
@@ -316,41 +360,118 @@
 					if (result.assetsChecksum) {
 						assetsChecksum = result.assetsChecksum;
 					}
+			}
 
-					if (result.allowed) {
-						// Remove login overlay from DOM and prepare for game initialization
-						const loginOverlay = document.getElementById('login-overlay');
-						if (loginOverlay) {
-							loginOverlay.remove();
-						}
-						
-						// Focus the game container and window to ensure input works
-						const gameFrame = document.getElementById('game_frame');
-						if (gameFrame) {
-							gameFrame.focus();
-						}
-						window.focus();
-						
-						if (!gameInitialized) {
-							gameInitialized = true;
-							// Use requestAnimationFrame + setTimeout to ensure browser is ready for input
-							requestAnimationFrame(() => {
-								setTimeout(() => {
-									initializeGame();
-								}, 100);
-							});
-						}
-					} else {
-						// Redirect to closed page with reason
-						const reason = encodeURIComponent(result.reason || 'Access denied');
-						window.location.href = `/closed.html?reason=${reason}`;
+			function stopPeriodicAccessChecks() {
+				if (periodicAccessCheckTimer !== null) {
+					clearInterval(periodicAccessCheckTimer);
+					periodicAccessCheckTimer = null;
+				}
+			}
+
+			function handleAccessRevoked(reason) {
+				if (accessRevoked) {
+					return;
+				}
+
+				accessRevoked = true;
+				stopPeriodicAccessChecks();
+				currentIdToken = null;
+				currentUser = null;
+				const encodedReason = encodeURIComponent(reason || 'Access denied');
+				window.location.href = `/closed.html?reason=${encodedReason}`;
+			}
+
+			async function runPeriodicAccessCheck() {
+				if (accessRevoked || !currentIdToken || periodicAccessCheckInFlight) {
+					return;
+				}
+
+				periodicAccessCheckInFlight = true;
+				try {
+					const decision = await fetchAccessDecision(currentIdToken);
+
+					if (decision.type === 'allowed') {
+						transientAccessFailureCount = 0;
+						applyAllowedAccessResult(decision.result);
+						return;
 					}
 
-				} catch (err) {
-					console.error('Access check error:', err);
-					showError('Could not verify access. Please try again.');
-					showLoading(false);
+					if (decision.type === 'denied') {
+						handleAccessRevoked(decision.reason);
+						return;
+					}
+
+					// Fail-open on transient errors to avoid false kicks during outages
+					transientAccessFailureCount += 1;
+					console.warn('Periodic access check transient failure:', decision.reason);
+				} finally {
+					periodicAccessCheckInFlight = false;
 				}
+			}
+
+			function startPeriodicAccessChecks() {
+				if (periodicAccessCheckTimer !== null) {
+					return;
+				}
+
+				periodicAccessCheckTimer = setInterval(() => {
+					void runPeriodicAccessCheck();
+				}, ACCESS_RECHECK_INTERVAL_MS);
+			}
+
+			/**
+			 * Check access using Google ID token
+			 */
+			async function checkAccessWithToken(idToken) {
+				// Store token for use in assets loading and periodic re-check
+				currentIdToken = idToken;
+				
+				const decision = await fetchAccessDecision(idToken);
+
+				if (decision.type === 'allowed') {
+					applyAllowedAccessResult(decision.result);
+
+					// Remove login overlay from DOM and prepare for game initialization
+					const loginOverlay = document.getElementById('login-overlay');
+					if (loginOverlay) {
+						loginOverlay.remove();
+					}
+					
+					// Focus the game container and window to ensure input works
+					const gameFrame = document.getElementById('game_frame');
+					if (gameFrame) {
+						gameFrame.focus();
+					}
+					window.focus();
+					
+					if (!gameInitialized) {
+						gameInitialized = true;
+						// Use requestAnimationFrame + setTimeout to ensure browser is ready for input
+						requestAnimationFrame(() => {
+							setTimeout(() => {
+								initializeGame();
+							}, 100);
+						});
+					}
+
+					startPeriodicAccessChecks();
+					return;
+				}
+
+				if (decision.type === 'denied') {
+					// Keep initial sign-in behavior for auth failures, but enforce explicit access denies.
+					if (decision.result && decision.result.allowed === false) {
+						handleAccessRevoked(decision.reason);
+					} else {
+						showError(decision.reason || 'Could not verify access. Please try again.');
+						showLoading(false);
+					}
+					return;
+				}
+
+				showError(decision.reason || 'Could not verify access. Please try again.');
+				showLoading(false);
 			}
 
 			/**
@@ -468,6 +589,7 @@
 		<script>
 			window.onbeforeunload = null;
 			window.addEventListener("beforeunload", function (event) {
+				stopPeriodicAccessChecks();
 				event.stopImmediatePropagation();
 			}, true);
 		</script>
