@@ -326,8 +326,17 @@
 						};
 					}
 
-					// Treat explicit auth/permission failures as deny decisions
-					if (response.status === 401 || response.status === 403) {
+					// 401 = token expired/invalid — treat as transient so periodic playtime check doesn't kick the user
+					if (response.status === 401) {
+						return {
+							type: 'transient',
+							reason: (result && (result.message || result.error)) || 'Authentication expired',
+							result: result
+						};
+					}
+
+					// 403 = policy deny (e.g. outside playtime) — revoke access
+					if (response.status === 403) {
 						return {
 							type: 'denied',
 							reason: (result && (result.message || result.error)) || 'Access denied',
