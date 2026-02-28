@@ -536,13 +536,13 @@
 				// Construct assets URI with authentication token and checksum for cache versioning
 				let assetsURI;
 				if (currentIdToken) {
-					const baseUrl = `${CONFIG.WORKER_URL}/assets16.epk?token=${encodeURIComponent(currentIdToken)}`;
+					const baseUrl = `${CONFIG.WORKER_URL}/assets17.epk?token=${encodeURIComponent(currentIdToken)}`;
 					// Append hash parameter if checksum is available (for cache versioning)
 					assetsURI = assetsChecksum 
 						? `${baseUrl}&hash=${encodeURIComponent(assetsChecksum)}`
 						: baseUrl;
 				} else {
-					assetsURI = "assets16.epk"; // Fallback if no token (shouldn't happen)
+					assetsURI = "assets17.epk"; // Fallback if no token (shouldn't happen)
 				}
 				
 				window.eaglercraftXOpts = {
