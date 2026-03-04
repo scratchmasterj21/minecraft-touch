@@ -152,6 +152,62 @@
 			let transientAccessFailureCount = 0;
 			let accessRevoked = false;
 
+			/** Fixed viewport size for iPad "Request Desktop" so touch controls match mobile (no scale = no coordinate issues). */
+			const IPAD_DESKTOP_VIEWPORT = { portraitW: 820, portraitH: 1180 };
+
+			/**
+			 * Detect iPad with "Request Desktop Site" (iPadOS 13+ reports Macintosh UA but device is touch).
+			 * Used to force a mobile-sized viewport so touch button sizes match normal mobile mode.
+			 */
+			function isIPadDesktopMode() {
+				const ua = navigator.userAgent.toLowerCase();
+				const originalUA = navigator.userAgent;
+				const hasTouch = navigator.maxTouchPoints > 1 || 'ontouchstart' in window;
+				const looksLikeDesktopUA = /macintosh/i.test(ua) && !/mobile/i.test(ua) && !originalUA.includes('iPad');
+				const looksLikeSafari = /safari/i.test(ua) && !/(windows|linux|chromeos)/i.test(ua);
+				return hasTouch && looksLikeDesktopUA && looksLikeSafari;
+			}
+
+			/**
+			 * Wrap the game in a fixed mobile-sized viewport when on iPad desktop mode.
+			 * Uses fixed pixel size (no transform scale) so touch coordinates stay correct.
+			 * Centered with black letterboxing; orientation changes swap width/height.
+			 */
+			function applyMobileViewportForIPadDesktop() {
+				const gameFrame = document.getElementById('game_frame');
+				if (!gameFrame || document.getElementById('game_viewport_wrapper')) return;
+
+				const { portraitW, portraitH } = IPAD_DESKTOP_VIEWPORT;
+				function isLandscape() { return window.innerWidth >= window.innerHeight; }
+				function setInnerSize(inner) {
+					if (isLandscape()) {
+						inner.style.width = portraitH + 'px';
+						inner.style.height = portraitW + 'px';
+					} else {
+						inner.style.width = portraitW + 'px';
+						inner.style.height = portraitH + 'px';
+					}
+				}
+
+				const wrapper = document.createElement('div');
+				wrapper.id = 'game_viewport_wrapper';
+				wrapper.setAttribute('style',
+					'position:fixed;inset:0;display:flex;justify-content:center;align-items:center;background:#000;');
+				const inner = document.createElement('div');
+				inner.id = 'game_viewport_inner';
+				setInnerSize(inner);
+				gameFrame.style.width = '100%';
+				gameFrame.style.height = '100%';
+				inner.appendChild(gameFrame);
+				wrapper.appendChild(inner);
+				document.body.appendChild(wrapper);
+
+				window.addEventListener('resize', function onResize() {
+					const innerEl = document.getElementById('game_viewport_inner');
+					if (innerEl) setInnerSize(innerEl);
+				});
+			}
+
 			/**
 			 * Detect if device is mobile, tablet, or iPad
 			 * Returns true if device should be blocked
@@ -529,6 +585,11 @@
 				if (window.location.href.indexOf("file:") === 0) {
 					alert("HTTP please, do not open this file locally, run a local HTTP server and load it via HTTP");
 					return;
+				}
+
+				// iPad "Request Desktop": use fixed mobile-sized viewport so touch button size matches mobile (no scale = no coordinate issues).
+				if (isIPadDesktopMode()) {
+					applyMobileViewportForIPadDesktop();
 				}
 
 				var relayId = Math.floor(Math.random() * 2);
