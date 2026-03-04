@@ -152,8 +152,8 @@
 			let transientAccessFailureCount = 0;
 			let accessRevoked = false;
 
-			/** Fixed viewport size for iPad "Request Desktop" – match iPad mobile size so touch controls are same as mobile (not phone-sized). */
-			const IPAD_DESKTOP_VIEWPORT = { portraitW: 820, portraitH: 1180 };
+			/** Fixed viewport for iPad "Request Desktop" – between phone (428) and tablet (820) so touch controls are a comfortable size. */
+			const IPAD_DESKTOP_VIEWPORT = { portraitW: 600, portraitH: 1000 };
 
 			/**
 			 * Detect iPad with "Request Desktop Site" (iPadOS 13+ reports Macintosh UA but device is touch).
