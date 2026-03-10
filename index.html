@@ -130,24 +130,14 @@
 				// TODO: Replace with your Google OAuth Client ID from Google Cloud Console
 				GOOGLE_CLIENT_ID: '313123590702-lb7fjsbbqt83t3ljocvpf5la58uqmir4.apps.googleusercontent.com',
 				
-				// Your Cloudflare Worker endpoint (for assets only)
+				// Your Cloudflare Worker endpoint
 				WORKER_URL: 'https://checkaccess.carlo587-jcl.workers.dev',
 				
-				// Netlify App Access Management – single check (schedule + playtime)
-				// Replace with your Netlify site URL, e.g. https://your-site.netlify.app
-				NETLIFY_APP_URL: 'https://shiny-gumption-3aeff5.netlify.app',
-				
-				// App ID for access rules (must match the app ID in App Access Management)
+				// App ID for access rules
 				APP_ID: 'minecraft',
 				
 				// Allowed email domain
-				ALLOWED_DOMAIN: 'felice.ed.jp',
-				
-				// How often to re-check access (ms)
-				ACCESS_RECHECK_INTERVAL_MS: 60000,
-				// How often to send playtime heartbeat (ms), and minutes to add per heartbeat
-				PLAYTIME_HEARTBEAT_INTERVAL_MS: 5 * 60 * 1000,
-				PLAYTIME_MINUTES_PER_HEARTBEAT: 5
+				ALLOWED_DOMAIN: 'felice.ed.jp'
 			};
 			// ============================================
 
@@ -156,10 +146,9 @@
 			let constructedUsername = null;
 			let currentIdToken = null;
 			let assetsChecksum = null;
-			const ACCESS_RECHECK_INTERVAL_MS = CONFIG.ACCESS_RECHECK_INTERVAL_MS ?? 60000;
+			const ACCESS_RECHECK_INTERVAL_MS = 60000;
 			let periodicAccessCheckTimer = null;
 			let periodicAccessCheckInFlight = false;
-			let playtimeHeartbeatTimer = null;
 			let transientAccessFailureCount = 0;
 			let accessRevoked = false;
 
@@ -354,24 +343,17 @@
 			}
 
 			/**
-			 * Perform access check against Netlify (schedule + playtime).
-			 * Uses currentUser.email and CONFIG.APP_ID. Call when currentUser is set.
+			 * Perform authenticated access check against worker
 			 */
 			async function fetchAccessDecision(idToken) {
-				if (!currentUser || !currentUser.email) {
-					return { type: 'transient', reason: 'Not signed in' };
-				}
-				const base = (CONFIG.NETLIFY_APP_URL || '').replace(/\/$/, '');
-				if (!base) {
-					return { type: 'transient', reason: 'NETLIFY_APP_URL not configured' };
-				}
 				try {
-					const response = await fetch(`${base}/.netlify/functions/check-access`, {
+					const response = await fetch(`${CONFIG.WORKER_URL}/check-access`, {
 						method: 'POST',
 						headers: { 'Content-Type': 'application/json' },
 						body: JSON.stringify({
-							email: currentUser.email,
-							appId: CONFIG.APP_ID
+							idToken: idToken,
+							appId: CONFIG.APP_ID,
+							timezone: Intl.DateTimeFormat().resolvedOptions().timeZone
 						})
 					});
 
@@ -400,6 +382,7 @@
 						};
 					}
 
+					// 401 = token expired/invalid — treat as transient so periodic playtime check doesn't kick the user
 					if (response.status === 401) {
 						return {
 							type: 'transient',
@@ -408,6 +391,7 @@
 						};
 					}
 
+					// 403 = policy deny (e.g. outside playtime) — revoke access
 					if (response.status === 403) {
 						return {
 							type: 'denied',
@@ -432,13 +416,13 @@
 			 * Update local runtime state from an allowed access response
 			 */
 			function applyAllowedAccessResult(result) {
-					// Username: from server if present (Worker), else use Google display name (Netlify)
-					if (result && result.username) {
+					// Get username from server response (constructed server-side for security)
+					if (result.username) {
 						constructedUsername = result.username;
-					} else if (currentUser && currentUser.name) {
-						constructedUsername = currentUser.name;
 					}
-					if (result && result.assetsChecksum) {
+					
+					// Get assets checksum for cache versioning
+					if (result.assetsChecksum) {
 						assetsChecksum = result.assetsChecksum;
 					}
 			}
@@ -447,33 +431,6 @@
 				if (periodicAccessCheckTimer !== null) {
 					clearInterval(periodicAccessCheckTimer);
 					periodicAccessCheckTimer = null;
-				}
-				if (playtimeHeartbeatTimer !== null) {
-					clearInterval(playtimeHeartbeatTimer);
-					playtimeHeartbeatTimer = null;
-				}
-			}
-
-			/**
-			 * Send playtime heartbeat to Netlify (records minutes used for daily limit).
-			 */
-			async function sendPlaytimeHeartbeat() {
-				if (!currentUser || !currentUser.email || accessRevoked) return;
-				const base = (CONFIG.NETLIFY_APP_URL || '').replace(/\/$/, '');
-				if (!base) return;
-				const minutes = CONFIG.PLAYTIME_MINUTES_PER_HEARTBEAT ?? 5;
-				try {
-					await fetch(`${base}/.netlify/functions/playtime-heartbeat`, {
-						method: 'POST',
-						headers: { 'Content-Type': 'application/json' },
-						body: JSON.stringify({
-							email: currentUser.email,
-							appId: CONFIG.APP_ID,
-							minutesToAdd: minutes
-						})
-					});
-				} catch (err) {
-					console.warn('Playtime heartbeat failed:', err);
 				}
 			}
 
@@ -522,18 +479,10 @@
 				if (periodicAccessCheckTimer !== null) {
 					return;
 				}
-				const recheckMs = CONFIG.ACCESS_RECHECK_INTERVAL_MS ?? 60000;
+
 				periodicAccessCheckTimer = setInterval(() => {
 					void runPeriodicAccessCheck();
-				}, recheckMs);
-
-				// Playtime heartbeat: report usage every N minutes for daily limit
-				const heartbeatMs = CONFIG.PLAYTIME_HEARTBEAT_INTERVAL_MS ?? (5 * 60 * 1000);
-				if (heartbeatMs > 0 && CONFIG.NETLIFY_APP_URL) {
-					playtimeHeartbeatTimer = setInterval(() => {
-						void sendPlaytimeHeartbeat();
-					}, heartbeatMs);
-				}
+				}, ACCESS_RECHECK_INTERVAL_MS);
 			}
 
 			/**
