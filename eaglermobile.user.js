@@ -644,6 +644,24 @@ function insertCanvasElements() {
     document.body.appendChild(coordinatesButton);
 }
 // CSS for touch screen buttons, along with fixing iOS's issues with 100vh ignoring the naviagtion bar, and actually disabling zoom because safari ignores user-scalable=no :(
+// When the page uses a viewport wrapper (e.g. iPad fixed-size container), do NOT force canvas/html/body to 100svh or the game canvas will not render properly (black screen).
+var hasViewportWrapper = document.getElementById('game_viewport_wrapper') != null;
+var canvasContainerCss = hasViewportWrapper
+    ? ''
+    : `html, body, canvas {
+        height: 100svh !important;
+        height: -webkit-fill-available !important;
+        touch-action: pan-x pan-y;
+        -webkit-touch-callout: none;
+        -webkit-user-select: none;
+        -khtml-user-select: none;
+        -moz-user-select: none;
+        -ms-user-select: none;
+        user-select: none;
+        outline: none;
+        -webkit-tap-highlight-color: rgba(255, 255, 255, 0);
+    }
+    `;
 let customStyle = document.createElement("style");
 customStyle.textContent = `
     .mobileControl, .mobileControl:active, .mobileControl.active{
@@ -692,19 +710,7 @@ customStyle.textContent = `
         outline: none;
         -webkit-tap-highlight-color: rgba(255, 255, 255, 0);
     }
-    html, body, canvas {
-        height: 100svh !important;
-        height: -webkit-fill-available !important;
-        touch-action: pan-x pan-y;
-        -webkit-touch-callout: none;
-        -webkit-user-select: none;
-        -khtml-user-select: none;
-        -moz-user-select: none;
-        -ms-user-select: none;
-        user-select: none;
-        outline: none;
-        -webkit-tap-highlight-color: rgba(255, 255, 255, 0);
-    }
+    ` + canvasContainerCss + `
     .hide {
         display: none;
     }
