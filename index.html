@@ -4,7 +4,7 @@
 		<!-- true = Pocket Edition-style touch overlay (load eaglermobile.js or use userscript); false = default client touch controls -->
 		<script type="text/javascript">window.eaglerMobileTouch = true;</script>
 		<!-- Pocket Edition touch controls: put eaglermobile.js in the same folder as index.html and uncomment the line below -->
-		 <script type="text/javascript" src="eaglermobile.user.js"></script>
+		<script type="text/javascript" src="eaglermobile.user.js"></script>
 		<meta charset="UTF-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0" />
 		<meta name="description" content="Play minecraft 1.8 in your browser" />
@@ -591,10 +591,10 @@
 					return;
 				}
 
-				// iPad "Request Desktop": use fixed mobile-sized viewport so touch button size matches mobile (no scale = no coordinate issues).
-				if (isIPadDesktopMode()) {
+				// iPad "Request Desktop": use fixed mobile-sized viewport only when NOT using PE touch.
+				// When eaglerMobileTouch is true, skip the wrapper so the game stays full-screen and renders correctly (avoids black screen).
+				if (isIPadDesktopMode() && window.eaglerMobileTouch !== true) {
 					applyMobileViewportForIPadDesktop();
-					// Force reflow so the game container has correct dimensions before the client (main()) measures it; avoids black screen.
 					var frame = document.getElementById('game_frame');
 					if (frame && frame.offsetParent) void frame.offsetHeight;
 				}
@@ -613,8 +613,8 @@
 					assetsURI = "assets21.epk"; // Fallback if no token (shouldn't happen)
 				}
 				
-				// When we force a fixed viewport (iPad desktop mode), game must use container size not window.visualViewport
-				const useFixedViewport = isIPadDesktopMode();
+				// When we actually applied the fixed viewport (iPad desktop mode and not PE touch), game uses container size
+				const useFixedViewport = isIPadDesktopMode() && window.eaglerMobileTouch !== true;
 				window.eaglercraftXOpts = {
 					demoMode: false,
 					container: "game_frame",
