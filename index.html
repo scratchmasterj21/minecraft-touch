@@ -147,7 +147,9 @@
 			let currentIdToken = null;
 			let assetsChecksum = null;
 			const ACCESS_RECHECK_INTERVAL_MS = 60000;
+			const PLAYTIME_HEARTBEAT_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 			let periodicAccessCheckTimer = null;
+			let playtimeHeartbeatTimer = null;
 			let periodicAccessCheckInFlight = false;
 			let transientAccessFailureCount = 0;
 			let accessRevoked = false;
@@ -434,6 +436,42 @@
 				}
 			}
 
+			function stopPlaytimeHeartbeat() {
+				if (playtimeHeartbeatTimer !== null) {
+					clearInterval(playtimeHeartbeatTimer);
+					playtimeHeartbeatTimer = null;
+				}
+			}
+
+			/**
+			 * Send playtime heartbeat to worker (forwards to Netlify for daily limit tracking).
+			 * Called every 5 minutes while the game is running.
+			 */
+			async function sendPlaytimeHeartbeat() {
+				if (accessRevoked || !currentIdToken) return;
+				try {
+					await fetch(`${CONFIG.WORKER_URL}/playtime-heartbeat`, {
+						method: 'POST',
+						headers: { 'Content-Type': 'application/json' },
+						body: JSON.stringify({
+							idToken: currentIdToken,
+							appId: CONFIG.APP_ID,
+							minutesToAdd: 5
+						})
+					});
+				} catch (err) {
+					console.warn('Playtime heartbeat failed:', err);
+				}
+			}
+
+			function startPlaytimeHeartbeat() {
+				if (playtimeHeartbeatTimer !== null) return;
+				// First heartbeat after 5 minutes (align with interval so we don't double-count the first minute)
+				playtimeHeartbeatTimer = setInterval(() => {
+					void sendPlaytimeHeartbeat();
+				}, PLAYTIME_HEARTBEAT_INTERVAL_MS);
+			}
+
 			function handleAccessRevoked(reason) {
 				if (accessRevoked) {
 					return;
@@ -441,6 +479,7 @@
 
 				accessRevoked = true;
 				stopPeriodicAccessChecks();
+				stopPlaytimeHeartbeat();
 				currentIdToken = null;
 				currentUser = null;
 				const encodedReason = encodeURIComponent(reason || 'Access denied');
@@ -521,6 +560,7 @@
 					}
 
 					startPeriodicAccessChecks();
+					startPlaytimeHeartbeat();
 					return;
 				}
 
@@ -663,6 +703,7 @@
 			window.onbeforeunload = null;
 			window.addEventListener("beforeunload", function (event) {
 				stopPeriodicAccessChecks();
+				stopPlaytimeHeartbeat();
 				event.stopImmediatePropagation();
 			}, true);
 		</script>
