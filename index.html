@@ -145,13 +145,14 @@
 			let currentUser = null;
 			let constructedUsername = null;
 			let currentIdToken = null;
+			let currentSessionToken = null;
 			let assetsChecksum = null;
 			const ACCESS_RECHECK_INTERVAL_MS = 60000;
 			let periodicAccessCheckTimer = null;
 			let periodicAccessCheckInFlight = false;
-			let transientAccessFailureCount = 0;
-			const MAX_TRANSIENT_FAILURES = 3;
 			let accessRevoked = false;
+			let localTimeLeftMinutes = null;
+			let localCountdownTimer = null;
 
 			/** Fixed viewport for iPad "Request Desktop" – slightly larger so touch controls are a bit bigger but still comfortably visible. */
 			const IPAD_DESKTOP_VIEWPORT = { portraitW: 650, portraitH: 1200 };
@@ -348,14 +349,13 @@
 			 */
 			async function fetchAccessDecision(idToken) {
 				try {
+					const payload = currentSessionToken
+						? { sessionToken: currentSessionToken, appId: CONFIG.APP_ID }
+						: { idToken: idToken, appId: CONFIG.APP_ID, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone };
 					const response = await fetch(`${CONFIG.WORKER_URL}/check-access`, {
 						method: 'POST',
 						headers: { 'Content-Type': 'application/json' },
-						body: JSON.stringify({
-							idToken: idToken,
-							appId: CONFIG.APP_ID,
-							timezone: Intl.DateTimeFormat().resolvedOptions().timeZone
-						})
+						body: JSON.stringify(payload)
 					});
 
 					let result = null;
@@ -426,14 +426,17 @@
 			 * Update local runtime state from an allowed access response
 			 */
 			function applyAllowedAccessResult(result) {
-					// Get username from server response (constructed server-side for security)
 					if (result.username) {
 						constructedUsername = result.username;
 					}
-					
-					// Get assets checksum for cache versioning
 					if (result.assetsChecksum) {
 						assetsChecksum = result.assetsChecksum;
+					}
+					if (result.sessionToken) {
+						currentSessionToken = result.sessionToken;
+					}
+					if (typeof result.timeLeftMinutes === 'number' && result.timeLeftMinutes < 900) {
+						localTimeLeftMinutes = result.timeLeftMinutes;
 					}
 			}
 
@@ -451,14 +454,34 @@
 
 				accessRevoked = true;
 				stopPeriodicAccessChecks();
+				stopLocalCountdown();
 				currentIdToken = null;
+				currentSessionToken = null;
 				currentUser = null;
 				const encodedReason = encodeURIComponent(reason || 'Access denied');
 				window.location.href = `/closed.html?reason=${encodedReason}`;
 			}
 
+			function startLocalCountdown() {
+				if (localCountdownTimer !== null) return;
+				localCountdownTimer = setInterval(function () {
+					if (localTimeLeftMinutes === null) return;
+					localTimeLeftMinutes -= 1;
+					if (localTimeLeftMinutes <= 0) {
+						handleAccessRevoked('Daily playtime limit reached. You have used your allowed time for today.');
+					}
+				}, 60000);
+			}
+
+			function stopLocalCountdown() {
+				if (localCountdownTimer !== null) {
+					clearInterval(localCountdownTimer);
+					localCountdownTimer = null;
+				}
+			}
+
 			async function runPeriodicAccessCheck() {
-				if (accessRevoked || !currentIdToken || periodicAccessCheckInFlight) {
+				if (accessRevoked || (!currentIdToken && !currentSessionToken) || periodicAccessCheckInFlight) {
 					return;
 				}
 
@@ -467,7 +490,6 @@
 					const decision = await fetchAccessDecision(currentIdToken);
 
 					if (decision.type === 'allowed') {
-						transientAccessFailureCount = 0;
 						applyAllowedAccessResult(decision.result);
 						return;
 					}
@@ -477,12 +499,8 @@
 						return;
 					}
 
-					transientAccessFailureCount += 1;
-					console.warn('Periodic access check transient failure (' + transientAccessFailureCount + '/' + MAX_TRANSIENT_FAILURES + '):', decision.reason);
-					if (transientAccessFailureCount >= MAX_TRANSIENT_FAILURES) {
-						handleAccessRevoked('Access could not be verified. Please reconnect.');
-						return;
-					}
+					// Transient errors: log and retry next cycle — never kick
+					console.warn('Periodic access check transient failure:', decision.reason);
 				} finally {
 					periodicAccessCheckInFlight = false;
 				}
@@ -499,12 +517,12 @@
 			}
 
 			document.addEventListener('visibilitychange', function () {
-				if (document.visibilityState === 'visible' && !accessRevoked && currentIdToken) {
+				if (document.visibilityState === 'visible' && !accessRevoked && (currentIdToken || currentSessionToken)) {
 					void runPeriodicAccessCheck();
 				}
 			});
 			window.addEventListener('focus', function () {
-				if (!accessRevoked && currentIdToken) {
+				if (!accessRevoked && (currentIdToken || currentSessionToken)) {
 					void runPeriodicAccessCheck();
 				}
 			});
@@ -545,6 +563,7 @@
 					}
 
 					startPeriodicAccessChecks();
+					startLocalCountdown();
 					return;
 				}
 
@@ -687,6 +706,7 @@
 			window.onbeforeunload = null;
 			window.addEventListener("beforeunload", function (event) {
 				stopPeriodicAccessChecks();
+				stopLocalCountdown();
 				event.stopImmediatePropagation();
 			}, true);
 		</script>
