@@ -368,6 +368,24 @@
 						};
 					}
 
+					// 5xx or explicit transient flag = server-side failure, never kick
+					if (response.status >= 500 || (result && result.transient === true)) {
+						return {
+							type: 'transient',
+							reason: (result && (result.message || result.error)) || 'Could not verify access right now',
+							result: result
+						};
+					}
+
+					// 401 = token expired/invalid — treat as transient
+					if (response.status === 401) {
+						return {
+							type: 'transient',
+							reason: (result && (result.message || result.error)) || 'Authentication expired',
+							result: result
+						};
+					}
+
 					if (result && result.allowed === true) {
 						return {
 							type: 'allowed',
@@ -383,16 +401,7 @@
 						};
 					}
 
-					// 401 = token expired/invalid — treat as transient so periodic playtime check doesn't kick the user
-					if (response.status === 401) {
-						return {
-							type: 'transient',
-							reason: (result && (result.message || result.error)) || 'Authentication expired',
-							result: result
-						};
-					}
-
-					// 403 = policy deny (e.g. outside playtime) — revoke access
+					// 403 = policy deny
 					if (response.status === 403) {
 						return {
 							type: 'denied',
