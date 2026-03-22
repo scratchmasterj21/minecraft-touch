@@ -676,7 +676,8 @@
 					allowFNAWSkins: true,
 					useVisualViewport: !useFixedViewport,
 					html5CursorSupport: true,
-					eaglerNoDelay: true,
+					eaglerNoDelay: !isMobileDevice(),
+					keepAliveHack: isMobileDevice(),
 					username: constructedUsername || 'Player'
 				};
 
