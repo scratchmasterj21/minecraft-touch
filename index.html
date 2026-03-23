@@ -18,7 +18,6 @@
 		
 		<!-- Game code -->
 		<script type="text/javascript" src="classes.js?v=1"></script>
-		
 
 		<style>
 			/* Login overlay styles */
@@ -103,23 +102,6 @@
 				40% { content: '..'; }
 				60%, 100% { content: '...'; }
 			}
-			
-			/* Device blocking message styles */
-			.device-block-message {
-				color: #f87171;
-				background: rgba(248, 113, 113, 0.1);
-				border: 1px solid rgba(248, 113, 113, 0.3);
-				border-radius: 8px;
-				padding: 20px 30px;
-				margin-top: 20px;
-				font-size: 1rem;
-				line-height: 1.6;
-			}
-			
-			.device-block-icon {
-				font-size: 3rem;
-				margin-bottom: 20px;
-			}
 		</style>
 
 		<script>
@@ -144,134 +126,6 @@
 			let gameInitialized = false;
 			let currentUser = null;
 			let constructedUsername = null;
-			let currentIdToken = null;
-			let currentSessionToken = null;
-			let assetsChecksum = null;
-			const ACCESS_RECHECK_INTERVAL_MS = 60000;
-			let periodicAccessCheckTimer = null;
-			let periodicAccessCheckInFlight = false;
-			let accessRevoked = false;
-			let localTimeLeftMinutes = null;
-			let localCountdownTimer = null;
-
-			/** Fixed viewport for iPad "Request Desktop" – slightly larger so touch controls are a bit bigger but still comfortably visible. */
-			const IPAD_DESKTOP_VIEWPORT = { portraitW: 650, portraitH: 1200 };
-
-			/**
-			 * Detect iPad with "Request Desktop Site" (iPadOS 13+ reports Macintosh UA but device is touch).
-			 * Used to force a mobile-sized viewport so touch button sizes match normal mobile mode.
-			 */
-			function isIPadDesktopMode() {
-				const ua = navigator.userAgent.toLowerCase();
-				const originalUA = navigator.userAgent;
-				const hasTouch = navigator.maxTouchPoints > 1 || 'ontouchstart' in window;
-				const looksLikeDesktopUA = /macintosh/i.test(ua) && !/mobile/i.test(ua) && !originalUA.includes('iPad');
-				const looksLikeSafari = /safari/i.test(ua) && !/(windows|linux|chromeos)/i.test(ua);
-				return hasTouch && looksLikeDesktopUA && looksLikeSafari;
-			}
-
-			/**
-			 * Wrap the game in a fixed mobile-sized viewport when on iPad desktop mode.
-			 * Uses fixed pixel size (no transform scale) so touch coordinates stay correct.
-			 * Centered with black letterboxing; orientation changes swap width/height.
-			 */
-			function applyMobileViewportForIPadDesktop() {
-				const gameFrame = document.getElementById('game_frame');
-				if (!gameFrame || document.getElementById('game_viewport_wrapper')) return;
-
-				const { portraitW, portraitH } = IPAD_DESKTOP_VIEWPORT;
-				function isLandscape() { return window.innerWidth >= window.innerHeight; }
-				function setInnerSize(inner) {
-					if (isLandscape()) {
-						inner.style.width = portraitH + 'px';
-						inner.style.height = portraitW + 'px';
-					} else {
-						inner.style.width = portraitW + 'px';
-						inner.style.height = portraitH + 'px';
-					}
-				}
-
-				const wrapper = document.createElement('div');
-				wrapper.id = 'game_viewport_wrapper';
-				wrapper.setAttribute('style',
-					'position:fixed;inset:0;display:flex;justify-content:center;align-items:center;background:#000;');
-				const inner = document.createElement('div');
-				inner.id = 'game_viewport_inner';
-				setInnerSize(inner);
-				gameFrame.style.width = '100%';
-				gameFrame.style.height = '100%';
-				inner.appendChild(gameFrame);
-				wrapper.appendChild(inner);
-				document.body.appendChild(wrapper);
-
-				window.addEventListener('resize', function onResize() {
-					const innerEl = document.getElementById('game_viewport_inner');
-					if (innerEl) setInnerSize(innerEl);
-				});
-			}
-
-			/**
-			 * Detect if device is mobile, tablet, or iPad
-			 * Returns true if device should be blocked
-			 */
-			function isMobileDevice() {
-				const ua = navigator.userAgent.toLowerCase();
-				const originalUA = navigator.userAgent; // Keep original for case-sensitive checks
-				
-				// IMPORTANT: Check for iPad FIRST (before desktop OS check)
-				// Modern iPads (iPadOS 13+) report "Macintosh" in User-Agent to get desktop sites
-				// Detection methods:
-				// 1. Explicit "iPad" in User-Agent (older iPads)
-				// 2. Macintosh + Safari + no Windows/Linux + touch support (newer iPads)
-				const isIPad = /ipad/i.test(ua) || 
-				               originalUA.includes('iPad') ||
-				               (/macintosh/i.test(ua) && /safari/i.test(ua) && !/(windows|linux|chromeos)/i.test(ua) && 
-				                !/mobile/i.test(ua) && !/iphone/i.test(ua) && 
-				                (navigator.maxTouchPoints > 1 || 'ontouchstart' in window));
-				
-				if (isIPad) {
-					return true; // Block iPad
-				}
-				
-				// Check for other tablets
-				const isAndroidTablet = /android/i.test(ua) && !/mobile/i.test(ua) && !/(windows|macintosh|linux|chromeos)/i.test(ua);
-				const isOtherTablet = /(tablet|kindle|playbook)/i.test(ua) && !/(windows|macintosh|linux|chromeos)/i.test(ua);
-				
-				if (isAndroidTablet || isOtherTablet) {
-					return true; // Block tablets
-				}
-				
-				// Check for mobile devices (be more specific to avoid false positives)
-				const isMobile = /(iphone|ipod|android.*mobile|blackberry|iemobile|opera mini|mobile)/i.test(ua) && 
-				                 !/(windows|macintosh|linux|chromeos)/i.test(ua);
-				
-				if (isMobile) {
-					return true; // Block mobile
-				}
-				
-				// If we get here, it's likely a desktop (already checked for iPad above)
-				return false;
-			}
-
-			/**
-			 * Show device blocking message
-			 */
-			function showDeviceBlockMessage() {
-				const loginOverlay = document.getElementById('login-overlay');
-				const loginContainer = document.querySelector('.login-container');
-				
-				if (loginOverlay && loginContainer) {
-					loginContainer.innerHTML = `
-						<div class="device-block-icon">📱</div>
-						<h1 class="login-title">Device Not Supported</h1>
-						<div class="device-block-message">
-							<p><strong>This game requires a desktop or laptop computer.</strong></p>
-							<p>Mobile devices, tablets, and iPads are not supported due to performance limitations and may experience significant lag.</p>
-							<p>Please access this game from a desktop or laptop computer for the best experience.</p>
-						</div>
-					`;
-				}
-			}
 
 			/**
 			 * Initialize Google Sign-In when the library loads
@@ -345,241 +199,67 @@
 			}
 
 			/**
-			 * Perform authenticated access check against worker
-			 */
-			async function fetchAccessDecision(idToken) {
-				try {
-					const payload = currentSessionToken
-						? { sessionToken: currentSessionToken, appId: CONFIG.APP_ID }
-						: { idToken: idToken, appId: CONFIG.APP_ID, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone };
-					const response = await fetch(`${CONFIG.WORKER_URL}/check-access`, {
-						method: 'POST',
-						headers: { 'Content-Type': 'application/json' },
-						body: JSON.stringify(payload)
-					});
-
-					let result = null;
-					try {
-						result = await response.json();
-					} catch (err) {
-						return {
-							type: 'transient',
-							reason: 'Invalid response from access service'
-						};
-					}
-
-					// 5xx or explicit transient flag = server-side failure, never kick
-					if (response.status >= 500 || (result && result.transient === true)) {
-						return {
-							type: 'transient',
-							reason: (result && (result.message || result.error)) || 'Could not verify access right now',
-							result: result
-						};
-					}
-
-					// 401 = token expired/invalid — treat as transient
-					if (response.status === 401) {
-						return {
-							type: 'transient',
-							reason: (result && (result.message || result.error)) || 'Authentication expired',
-							result: result
-						};
-					}
-
-					if (result && result.allowed === true) {
-						return {
-							type: 'allowed',
-							result: result
-						};
-					}
-
-					if (result && result.allowed === false) {
-						return {
-							type: 'denied',
-							reason: result.reason || result.message || 'Access denied',
-							result: result
-						};
-					}
-
-					// 403 = policy deny
-					if (response.status === 403) {
-						return {
-							type: 'denied',
-							reason: (result && (result.message || result.error)) || 'Access denied',
-							result: result
-						};
-					}
-
-					return {
-						type: 'transient',
-						reason: (result && (result.message || result.error)) || 'Could not verify access right now'
-					};
-				} catch (err) {
-					return {
-						type: 'transient',
-						reason: 'Could not verify access right now'
-					};
-				}
-			}
-
-			/**
-			 * Update local runtime state from an allowed access response
-			 */
-			function applyAllowedAccessResult(result) {
-					if (result.username) {
-						constructedUsername = result.username;
-					}
-					if (result.assetsChecksum) {
-						assetsChecksum = result.assetsChecksum;
-					}
-					if (result.sessionToken) {
-						currentSessionToken = result.sessionToken;
-					}
-					if (typeof result.timeLeftMinutes === 'number' && result.timeLeftMinutes < 900) {
-						localTimeLeftMinutes = result.timeLeftMinutes;
-					}
-			}
-
-			function stopPeriodicAccessChecks() {
-				if (periodicAccessCheckTimer !== null) {
-					clearInterval(periodicAccessCheckTimer);
-					periodicAccessCheckTimer = null;
-				}
-			}
-
-			function handleAccessRevoked(reason) {
-				if (accessRevoked) {
-					return;
-				}
-
-				accessRevoked = true;
-				stopPeriodicAccessChecks();
-				stopLocalCountdown();
-				currentIdToken = null;
-				currentSessionToken = null;
-				currentUser = null;
-				const encodedReason = encodeURIComponent(reason || 'Access denied');
-				window.location.href = `/closed.html?reason=${encodedReason}`;
-			}
-
-			function startLocalCountdown() {
-				if (localCountdownTimer !== null) return;
-				localCountdownTimer = setInterval(function () {
-					if (localTimeLeftMinutes === null) return;
-					localTimeLeftMinutes -= 1;
-					if (localTimeLeftMinutes <= 0) {
-						handleAccessRevoked('Daily playtime limit reached. You have used your allowed time for today.');
-					}
-				}, 60000);
-			}
-
-			function stopLocalCountdown() {
-				if (localCountdownTimer !== null) {
-					clearInterval(localCountdownTimer);
-					localCountdownTimer = null;
-				}
-			}
-
-			async function runPeriodicAccessCheck() {
-				if (accessRevoked || (!currentIdToken && !currentSessionToken) || periodicAccessCheckInFlight) {
-					return;
-				}
-
-				periodicAccessCheckInFlight = true;
-				try {
-					const decision = await fetchAccessDecision(currentIdToken);
-
-					if (decision.type === 'allowed') {
-						applyAllowedAccessResult(decision.result);
-						return;
-					}
-
-					if (decision.type === 'denied') {
-						handleAccessRevoked(decision.reason);
-						return;
-					}
-
-					// Transient errors: log and retry next cycle — never kick
-					console.warn('Periodic access check transient failure:', decision.reason);
-				} finally {
-					periodicAccessCheckInFlight = false;
-				}
-			}
-
-			function startPeriodicAccessChecks() {
-				if (periodicAccessCheckTimer !== null) {
-					return;
-				}
-
-				periodicAccessCheckTimer = setInterval(() => {
-					void runPeriodicAccessCheck();
-				}, ACCESS_RECHECK_INTERVAL_MS);
-			}
-
-			document.addEventListener('visibilitychange', function () {
-				if (document.visibilityState === 'visible' && !accessRevoked && (currentIdToken || currentSessionToken)) {
-					void runPeriodicAccessCheck();
-				}
-			});
-			window.addEventListener('focus', function () {
-				if (!accessRevoked && (currentIdToken || currentSessionToken)) {
-					void runPeriodicAccessCheck();
-				}
-			});
-
-			/**
 			 * Check access using Google ID token
 			 */
 			async function checkAccessWithToken(idToken) {
-				// Store token for use in assets loading and periodic re-check
-				currentIdToken = idToken;
-				
-				const decision = await fetchAccessDecision(idToken);
+				try {
+					const response = await fetch(`${CONFIG.WORKER_URL}/check-access`, {
+						method: 'POST',
+						headers: { 'Content-Type': 'application/json' },
+						body: JSON.stringify({
+							idToken: idToken,
+							appId: CONFIG.APP_ID,
+							timezone: Intl.DateTimeFormat().resolvedOptions().timeZone
+						})
+					});
 
-				if (decision.type === 'allowed') {
-					applyAllowedAccessResult(decision.result);
+					const result = await response.json();
 
-					// Remove login overlay from DOM and prepare for game initialization
-					const loginOverlay = document.getElementById('login-overlay');
-					if (loginOverlay) {
-						loginOverlay.remove();
-					}
-					
-					// Focus the game container and window to ensure input works
-					const gameFrame = document.getElementById('game_frame');
-					if (gameFrame) {
-						gameFrame.focus();
-					}
-					window.focus();
-					
-					if (!gameInitialized) {
-						gameInitialized = true;
-						// Use requestAnimationFrame + setTimeout to ensure browser is ready for input
-						requestAnimationFrame(() => {
-							setTimeout(() => {
-								initializeGame();
-							}, 100);
-						});
-					}
-
-					startPeriodicAccessChecks();
-					startLocalCountdown();
-					return;
-				}
-
-				if (decision.type === 'denied') {
-					// Keep initial sign-in behavior for auth failures, but enforce explicit access denies.
-					if (decision.result && decision.result.allowed === false) {
-						handleAccessRevoked(decision.reason);
-					} else {
-						showError(decision.reason || 'Could not verify access. Please try again.');
+					if (result.error) {
+						showError(result.message || result.error);
 						showLoading(false);
+						return;
 					}
-					return;
-				}
 
-				showError(decision.reason || 'Could not verify access. Please try again.');
-				showLoading(false);
+					// Get username from server response (constructed server-side for security)
+					if (result.username) {
+						constructedUsername = result.username;
+					}
+
+					if (result.allowed) {
+						// Remove login overlay from DOM and prepare for game initialization
+						const loginOverlay = document.getElementById('login-overlay');
+						if (loginOverlay) {
+							loginOverlay.remove();
+						}
+						
+						// Focus the game container and window to ensure input works
+						const gameFrame = document.getElementById('game_frame');
+						if (gameFrame) {
+							gameFrame.focus();
+						}
+						window.focus();
+						
+						if (!gameInitialized) {
+							gameInitialized = true;
+							// Use requestAnimationFrame + setTimeout to ensure browser is ready for input
+							requestAnimationFrame(() => {
+								setTimeout(() => {
+									initializeGame();
+								}, 100);
+							});
+						}
+					} else {
+						// Redirect to closed page with reason
+						const reason = encodeURIComponent(result.reason || 'Access denied');
+						window.location.href = `/closed.html?reason=${reason}`;
+					}
+
+				} catch (err) {
+					console.error('Access check error:', err);
+					showError('Could not verify access. Please try again.');
+					showLoading(false);
+				}
 			}
 
 			/**
@@ -630,39 +310,18 @@
 					return;
 				}
 
-				// iPad "Request Desktop": use fixed mobile-sized viewport so touch button size matches mobile (no scale = no coordinate issues).
-				if (isIPadDesktopMode()) {
-					applyMobileViewportForIPadDesktop();
-				}
-
 				var relayId = Math.floor(Math.random() * 2);
-				
-				// Construct assets URI with authentication token and checksum for cache versioning
-				let assetsURI;
-				if (currentIdToken) {
-					const baseUrl = `${CONFIG.WORKER_URL}/assets22.epk?token=${encodeURIComponent(currentIdToken)}`;
-					// Append hash parameter if checksum is available (for cache versioning)
-					assetsURI = assetsChecksum 
-						? `${baseUrl}&hash=${encodeURIComponent(assetsChecksum)}`
-						: baseUrl;
-				} else {
-					assetsURI = "assets22.epk"; // Fallback if no token (shouldn't happen)
-				}
-				
-				// When we force a fixed viewport (iPad desktop mode), game must use container size not window.visualViewport
-				const useFixedViewport = isIPadDesktopMode();
 				window.eaglercraftXOpts = {
 					demoMode: false,
 					container: "game_frame",
-					assetsURI: assetsURI,
+					assetsURI: "assets.epk",
 					localesURI: "lang/",
 					worldsDB: "worlds",
 					servers: [
-					//	{ addr: "wss://40d95f33cdab.ngrok-free.app", name: "Scratchmasterj21 server" }
-					{ addr: "wss://fmserver.gfa-scratchlab.com", name: "Scratchmasterj21 server" }
+						{ addr: "wss://fmserver.gfa-scratchlab.com/", name: "Scratchmasterj21 server" }
 					],
 					relays: [
-						{ addr: "wss://fmrelay.gfa-scratchlab.com", comment: "scratchmasterj21 #2", primary: relayId == 0 },
+						{ addr: "wss://fmrelay.gfa-scratchlab.com/", comment: "scratchmasterj21 #2", primary: relayId == 0 },
 					],
 					forceProfanityFilter: true,
 					allowBootMenu: false,
@@ -674,10 +333,10 @@
                     checkShaderGLErrors: false,
 					deobfStackTraces: false,
 					allowFNAWSkins: true,
-					useVisualViewport: !useFixedViewport,
+					useVisualViewport: true,
 					html5CursorSupport: true,
-					eaglerNoDelay: !isMobileDevice(),
-					keepAliveHack: isMobileDevice(),
+					eaglerNoDelay: true,
+					enforceVSync: true,
 					username: constructedUsername || 'Player'
 				};
 
@@ -691,23 +350,12 @@
 				main(); // Start the game
 			}
 
-			// Check for mobile devices and initialize on page load
-			window.addEventListener('load', function() {
-				// Check if device is mobile/tablet and block access - COMMENTED OUT to try mobile controls
-				// if (isMobileDevice()) {
-				// 	showDeviceBlockMessage();
-				// 	return; // Don't initialize Google Sign-In
-				// }
-				
-				// Device is desktop/laptop, proceed with initialization
-				initGoogleSignIn();
-			});
+			// Initialize Google Sign-In when page loads
+			window.addEventListener('load', initGoogleSignIn);
 		</script>
 		<script>
 			window.onbeforeunload = null;
 			window.addEventListener("beforeunload", function (event) {
-				stopPeriodicAccessChecks();
-				stopLocalCountdown();
 				event.stopImmediatePropagation();
 			}, true);
 		</script>
