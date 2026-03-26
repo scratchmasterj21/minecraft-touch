@@ -554,6 +554,9 @@
 					eaglerNoDelay: !isMobileDevice(),
 					singleThreadMode: isMobileDevice(),
 					forceWebGL1: isMobileDevice(),
+					useDelayOnSwap: isMobileDevice(),   // Prevents main-thread hangs
+                    ramdiskMode: !isMobileDevice(),     // Keeps RAM free for rendering
+                    useXHRFetch: isMobileDevice(),      // Better asset loading for WebKit
 					username: constructedUsername || 'Player'
 				};
 
