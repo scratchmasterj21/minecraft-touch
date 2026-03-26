@@ -105,6 +105,45 @@
 		</style>
 
 		<script>
+
+        function isMobileDevice() {
+				const ua = navigator.userAgent.toLowerCase();
+				const originalUA = navigator.userAgent; // Keep original for case-sensitive checks
+				
+				// IMPORTANT: Check for iPad FIRST (before desktop OS check)
+				// Modern iPads (iPadOS 13+) report "Macintosh" in User-Agent to get desktop sites
+				// Detection methods:
+				// 1. Explicit "iPad" in User-Agent (older iPads)
+				// 2. Macintosh + Safari + no Windows/Linux + touch support (newer iPads)
+				const isIPad = /ipad/i.test(ua) || 
+				               originalUA.includes('iPad') ||
+				               (/macintosh/i.test(ua) && /safari/i.test(ua) && !/(windows|linux|chromeos)/i.test(ua) && 
+				                !/mobile/i.test(ua) && !/iphone/i.test(ua) && 
+				                (navigator.maxTouchPoints > 1 || 'ontouchstart' in window));
+				
+				if (isIPad) {
+					return true; // Block iPad
+				}
+				
+				// Check for other tablets
+				const isAndroidTablet = /android/i.test(ua) && !/mobile/i.test(ua) && !/(windows|macintosh|linux|chromeos)/i.test(ua);
+				const isOtherTablet = /(tablet|kindle|playbook)/i.test(ua) && !/(windows|macintosh|linux|chromeos)/i.test(ua);
+				
+				if (isAndroidTablet || isOtherTablet) {
+					return true; // Block tablets
+				}
+				
+				// Check for mobile devices (be more specific to avoid false positives)
+				const isMobile = /(iphone|ipod|android.*mobile|blackberry|iemobile|opera mini|mobile)/i.test(ua) && 
+				                 !/(windows|macintosh|linux|chromeos)/i.test(ua);
+				
+				if (isMobile) {
+					return true; // Block mobile
+				}
+				
+				// If we get here, it's likely a desktop (already checked for iPad above)
+				return false;
+			}
 			// ============================================
 			// CONFIGURATION - Replace with your values
 			// ============================================
@@ -126,6 +165,15 @@
 			let gameInitialized = false;
 			let currentUser = null;
 			let constructedUsername = null;
+			let currentIdToken = null;
+			let currentSessionToken = null;
+			let assetsChecksum = null;
+			const ACCESS_RECHECK_INTERVAL_MS = 60000;
+			let periodicAccessCheckTimer = null;
+			let periodicAccessCheckInFlight = false;
+			let accessRevoked = false;
+			let localTimeLeftMinutes = null;
+			let localCountdownTimer = null;
 
 			/**
 			 * Initialize Google Sign-In when the library loads
@@ -199,67 +247,235 @@
 			}
 
 			/**
-			 * Check access using Google ID token
+			 * Perform authenticated access check against worker
 			 */
-			async function checkAccessWithToken(idToken) {
+			async function fetchAccessDecision(idToken) {
 				try {
+					const payload = currentSessionToken
+						? { sessionToken: currentSessionToken, appId: CONFIG.APP_ID }
+						: { idToken: idToken, appId: CONFIG.APP_ID, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone };
 					const response = await fetch(`${CONFIG.WORKER_URL}/check-access`, {
 						method: 'POST',
 						headers: { 'Content-Type': 'application/json' },
-						body: JSON.stringify({
-							idToken: idToken,
-							appId: CONFIG.APP_ID,
-							timezone: Intl.DateTimeFormat().resolvedOptions().timeZone
-						})
+						body: JSON.stringify(payload)
 					});
 
-					const result = await response.json();
+					let result = null;
+					try {
+						result = await response.json();
+					} catch (err) {
+						return {
+							type: 'transient',
+							reason: 'Invalid response from access service'
+						};
+					}
 
-					if (result.error) {
-						showError(result.message || result.error);
-						showLoading(false);
+					if (response.status >= 500 || (result && result.transient === true)) {
+						return {
+							type: 'transient',
+							reason: (result && (result.message || result.error)) || 'Could not verify access right now',
+							result: result
+						};
+					}
+
+					if (response.status === 401) {
+						return {
+							type: 'transient',
+							reason: (result && (result.message || result.error)) || 'Authentication expired',
+							result: result
+						};
+					}
+
+					if (result && result.allowed === true) {
+						return {
+							type: 'allowed',
+							result: result
+						};
+					}
+
+					if (result && result.allowed === false) {
+						return {
+							type: 'denied',
+							reason: result.reason || result.message || 'Access denied',
+							result: result
+						};
+					}
+
+					if (response.status === 403) {
+						return {
+							type: 'denied',
+							reason: (result && (result.message || result.error)) || 'Access denied',
+							result: result
+						};
+					}
+
+					return {
+						type: 'transient',
+						reason: (result && (result.message || result.error)) || 'Could not verify access right now'
+					};
+				} catch (err) {
+					return {
+						type: 'transient',
+						reason: 'Could not verify access right now'
+					};
+				}
+			}
+
+			/**
+			 * Update local runtime state from an allowed access response
+			 */
+			function applyAllowedAccessResult(result) {
+				if (result.username) {
+					constructedUsername = result.username;
+				}
+				if (result.assetsChecksum) {
+					assetsChecksum = result.assetsChecksum;
+				}
+				if (result.sessionToken) {
+					currentSessionToken = result.sessionToken;
+				}
+				if (typeof result.timeLeftMinutes === 'number' && result.timeLeftMinutes < 900) {
+					localTimeLeftMinutes = result.timeLeftMinutes;
+				}
+			}
+
+			function stopPeriodicAccessChecks() {
+				if (periodicAccessCheckTimer !== null) {
+					clearInterval(periodicAccessCheckTimer);
+					periodicAccessCheckTimer = null;
+				}
+			}
+
+			function handleAccessRevoked(reason) {
+				if (accessRevoked) {
+					return;
+				}
+
+				accessRevoked = true;
+				stopPeriodicAccessChecks();
+				stopLocalCountdown();
+				currentIdToken = null;
+				currentSessionToken = null;
+				currentUser = null;
+				const encodedReason = encodeURIComponent(reason || 'Access denied');
+				window.location.href = `/closed.html?reason=${encodedReason}`;
+			}
+
+			function startLocalCountdown() {
+				if (localCountdownTimer !== null) return;
+				localCountdownTimer = setInterval(function() {
+					if (localTimeLeftMinutes === null) return;
+					localTimeLeftMinutes -= 1;
+					if (localTimeLeftMinutes <= 0) {
+						handleAccessRevoked('Daily playtime limit reached. You have used your allowed time for today.');
+					}
+				}, 60000);
+			}
+
+			function stopLocalCountdown() {
+				if (localCountdownTimer !== null) {
+					clearInterval(localCountdownTimer);
+					localCountdownTimer = null;
+				}
+			}
+
+			async function runPeriodicAccessCheck() {
+				if (accessRevoked || (!currentIdToken && !currentSessionToken) || periodicAccessCheckInFlight) {
+					return;
+				}
+
+				periodicAccessCheckInFlight = true;
+				try {
+					const decision = await fetchAccessDecision(currentIdToken);
+
+					if (decision.type === 'allowed') {
+						applyAllowedAccessResult(decision.result);
 						return;
 					}
 
-					// Get username from server response (constructed server-side for security)
-					if (result.username) {
-						constructedUsername = result.username;
+					if (decision.type === 'denied') {
+						handleAccessRevoked(decision.reason);
+						return;
 					}
 
-					if (result.allowed) {
-						// Remove login overlay from DOM and prepare for game initialization
-						const loginOverlay = document.getElementById('login-overlay');
-						if (loginOverlay) {
-							loginOverlay.remove();
-						}
-						
-						// Focus the game container and window to ensure input works
-						const gameFrame = document.getElementById('game_frame');
-						if (gameFrame) {
-							gameFrame.focus();
-						}
-						window.focus();
-						
-						if (!gameInitialized) {
-							gameInitialized = true;
-							// Use requestAnimationFrame + setTimeout to ensure browser is ready for input
-							requestAnimationFrame(() => {
-								setTimeout(() => {
-									initializeGame();
-								}, 100);
-							});
-						}
-					} else {
-						// Redirect to closed page with reason
-						const reason = encodeURIComponent(result.reason || 'Access denied');
-						window.location.href = `/closed.html?reason=${reason}`;
-					}
-
-				} catch (err) {
-					console.error('Access check error:', err);
-					showError('Could not verify access. Please try again.');
-					showLoading(false);
+					console.warn('Periodic access check transient failure:', decision.reason);
+				} finally {
+					periodicAccessCheckInFlight = false;
 				}
+			}
+
+			function startPeriodicAccessChecks() {
+				if (periodicAccessCheckTimer !== null) {
+					return;
+				}
+
+				periodicAccessCheckTimer = setInterval(() => {
+					void runPeriodicAccessCheck();
+				}, ACCESS_RECHECK_INTERVAL_MS);
+			}
+
+			document.addEventListener('visibilitychange', function() {
+				if (document.visibilityState === 'visible' && !accessRevoked && (currentIdToken || currentSessionToken)) {
+					void runPeriodicAccessCheck();
+				}
+			});
+
+			window.addEventListener('focus', function() {
+				if (!accessRevoked && (currentIdToken || currentSessionToken)) {
+					void runPeriodicAccessCheck();
+				}
+			});
+
+			/**
+			 * Check access using Google ID token
+			 */
+			async function checkAccessWithToken(idToken) {
+				currentIdToken = idToken;
+				const decision = await fetchAccessDecision(idToken);
+
+				if (decision.type === 'allowed') {
+					applyAllowedAccessResult(decision.result);
+
+					// Remove login overlay from DOM and prepare for game initialization
+					const loginOverlay = document.getElementById('login-overlay');
+					if (loginOverlay) {
+						loginOverlay.remove();
+					}
+					
+					// Focus the game container and window to ensure input works
+					const gameFrame = document.getElementById('game_frame');
+					if (gameFrame) {
+						gameFrame.focus();
+					}
+					window.focus();
+					
+					if (!gameInitialized) {
+						gameInitialized = true;
+						// Use requestAnimationFrame + setTimeout to ensure browser is ready for input
+						requestAnimationFrame(() => {
+							setTimeout(() => {
+								initializeGame();
+							}, 100);
+						});
+					}
+
+					startPeriodicAccessChecks();
+					startLocalCountdown();
+					return;
+				}
+
+				if (decision.type === 'denied') {
+					if (decision.result && decision.result.allowed === false) {
+						handleAccessRevoked(decision.reason);
+					} else {
+						showError(decision.reason || 'Could not verify access. Please try again.');
+						showLoading(false);
+					}
+					return;
+				}
+
+				showError(decision.reason || 'Could not verify access. Please try again.');
+				showLoading(false);
 			}
 
 			/**
@@ -335,10 +551,9 @@
 					allowFNAWSkins: true,
 					useVisualViewport: true,
 					html5CursorSupport: true,
-					eaglerNoDelay: true,
-					enforceVSync: true,
-					singleThreadMode: true,
-					forceWebGL1: true,
+					eaglerNoDelay: !isMobileDevice(),
+					singleThreadMode: isMobileDevice(),
+					forceWebGL1: isMobileDevice(),
 					username: constructedUsername || 'Player'
 				};
 
@@ -358,6 +573,8 @@
 		<script>
 			window.onbeforeunload = null;
 			window.addEventListener("beforeunload", function (event) {
+				stopPeriodicAccessChecks();
+				stopLocalCountdown();
 				event.stopImmediatePropagation();
 			}, true);
 		</script>
