@@ -559,7 +559,7 @@
 					useDelayOnSwap: isMobileDevice(),   // Prevents main-thread hangs
                     ramdiskMode: isMobileDevice(),     // Keeps RAM free for rendering
                     useXHRFetch: isMobileDevice(),      // Better asset loading for WebKit
-					finishOnSwap: isMobileDevice(), 
+					finishOnSwap: !isMobileDevice(), 
 					username: constructedUsername || 'Player'
 				};
 
