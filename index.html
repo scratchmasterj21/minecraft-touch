@@ -555,9 +555,8 @@
 					eaglerNoDelay: !isMobileDevice(),
 					singleThreadMode: !isMobileDevice(),
 					forceWebGL2: isMobileDevice(),
-					useJOrbisAudioDecoder: isMobileDevice(),
 					useDelayOnSwap: !isMobileDevice(),   // Prevents main-thread hangs
-                    ramdiskMode: isMobileDevice(),     // Keeps RAM free for rendering
+                    ramdiskMode: !isMobileDevice(),     // Keeps RAM free for rendering
                     useXHRFetch: isMobileDevice(),      // Better asset loading for WebKit
 					finishOnSwap: !isMobileDevice(), 
 					username: constructedUsername || 'Player'
