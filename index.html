@@ -553,10 +553,10 @@
 					html5CursorSupport: !isMobileDevice(),
 					allowVoiceClient: false, // Saves buffer memory
 					eaglerNoDelay: !isMobileDevice(),
-					singleThreadMode: isMobileDevice(),
-					forceWebGL1: isMobileDevice(),
+					singleThreadMode: !isMobileDevice(),
+					forceWebGL2: isMobileDevice(),
 					useJOrbisAudioDecoder: isMobileDevice(),
-					useDelayOnSwap: isMobileDevice(),   // Prevents main-thread hangs
+					useDelayOnSwap: !isMobileDevice(),   // Prevents main-thread hangs
                     ramdiskMode: isMobileDevice(),     // Keeps RAM free for rendering
                     useXHRFetch: isMobileDevice(),      // Better asset loading for WebKit
 					finishOnSwap: !isMobileDevice(), 
