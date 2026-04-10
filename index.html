@@ -561,9 +561,10 @@
 					html5CursorSupport: !isMobileDevice(),
 					allowVoiceClient: false, // Saves buffer memory
 					eaglerNoDelay: !isMobileDevice(),
-					useDelayOnSwap: !isMobileDevice(),   // Prevents main-thread hangs
+					useDelayOnSwap: isMobileDevice(),   // Prevents main-thread hangs
                     useXHRFetch: isMobileDevice(),      // Better asset loading for WebKit
 					finishOnSwap: !isMobileDevice(), 
+					
 					username: constructedUsername || 'Player'
 				};
 
